@@ -24,7 +24,7 @@ enum StockfishFlavor {
 class Stockfish {
   /// Creates a new Stockfish engine.
   ///
-  /// This may throws a [StateError] if an active instance is being used.
+  /// Throws a [StateError] if an active instance is being used.
   /// Owner must [dispose] it before a new instance can be created.
   factory Stockfish(StockfishFlavor flavor) {
     if (_instance != null) {
