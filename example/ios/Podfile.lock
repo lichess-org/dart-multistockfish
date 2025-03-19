@@ -1,0 +1,28 @@
+PODS:
+  - Flutter (1.0.0)
+  - stockfish_hce (0.0.1):
+    - Flutter
+  - stockfish_nnue (0.0.1):
+    - Flutter
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - stockfish_hce (from `.symlinks/plugins/stockfish_hce/ios`)
+  - stockfish_nnue (from `.symlinks/plugins/stockfish_nnue/ios`)
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  stockfish_hce:
+    :path: ".symlinks/plugins/stockfish_hce/ios"
+  stockfish_nnue:
+    :path: ".symlinks/plugins/stockfish_nnue/ios"
+
+SPEC CHECKSUMS:
+  Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
+  stockfish_hce: c1bb4886c6d7215b2d2e5c7f67bc9310945bcded
+  stockfish_nnue: 166ae5187ee95eb5563971453bc5ee0aa4efd48c
+
+PODFILE CHECKSUM: 4305caec6b40dde0ae97be1573c53de1882a07e5
+
+COCOAPODS: 1.16.2
