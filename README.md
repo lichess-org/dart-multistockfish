@@ -1,92 +1,62 @@
 # multistockfish
 
-Multiple flavors of Stockfish Engine
+Multiple flavors of Stockfish Engine.
 
-## Getting Started
+This plugin supports the following Stockfish engines:
 
-This project is a starting point for a Flutter
-[FFI plugin](https://flutter.dev/to/ffi-package),
-a specialized package that includes native code directly invoked with Dart FFI.
+* Stockfish 11 with the handcrafted evaluation function (HCE)
+* Stockfish 17 with the NNUE evaluation function
 
-## Project structure
+## Usage
 
-This template uses the following structure:
+### Init engine
 
-* `src`: Contains the native source code, and a CmakeFile.txt file for building
-  that source code into a dynamic library.
+> [!WARNING]
+> Only one instance can be created at a time. The `Stockfish()` constructor
+> will throw a StateError if called while another instance is running.
 
-* `lib`: Contains the Dart code that defines the API of the plugin, and which
-  calls into the native code using `dart:ffi`.
+```dart
+import 'package:multistockfish/multistockfish.dart';
 
-* platform folders (`android`, `ios`, `windows`, etc.): Contains the build files
-  for building and bundling the native code library with the platform application.
+// create a new instance (here we use the handcrafted evaluation function)
+final stockfish = Stockfish(StockfishFlavor.hce);
 
-## Building and bundling native code
+// state is a ValueListenable<StockfishState>
+print(stockfish.state.value); # StockfishState.starting
 
-The `pubspec.yaml` specifies FFI plugins as follows:
-
-```yaml
-  plugin:
-    platforms:
-      some_platform:
-        ffiPlugin: true
+// the engine takes a few moment to start
+await Future.delayed(...)
+print(stockfish.state.value); # StockfishState.ready
 ```
 
-This configuration invokes the native build for the various target platforms
-and bundles the binaries in Flutter applications using these FFI plugins.
+### UCI command
 
-This can be combined with dartPluginClass, such as when FFI is used for the
-implementation of one platform in a federated plugin:
+Wait until the state is ready before sending commands.
 
-```yaml
-  plugin:
-    implements: some_other_plugin
-    platforms:
-      some_platform:
-        dartPluginClass: SomeClass
-        ffiPlugin: true
+```dart
+stockfish.stdin = 'isready';
+stockfish.stdin = 'go movetime 3000';
+stockfish.stdin = 'go infinite';
+stockfish.stdin = 'stop';
 ```
 
-A plugin can have both FFI and method channels:
+Engine output is directed to a `Stream<String>`, add a listener to process results.
 
-```yaml
-  plugin:
-    platforms:
-      some_platform:
-        pluginClass: SomeName
-        ffiPlugin: true
+```dart
+stockfish.stdout.listen((line) {
+  // do something useful
+  print(line);
+});
 ```
 
-The native build systems that are invoked by FFI (and method channel) plugins are:
+### Dispose / Hot reload
 
-* For Android: Gradle, which invokes the Android NDK for native builds.
-  * See the documentation in android/build.gradle.
-* For iOS and MacOS: Xcode, via CocoaPods.
-  * See the documentation in ios/multistockfish.podspec.
-  * See the documentation in macos/multistockfish.podspec.
-* For Linux and Windows: CMake.
-  * See the documentation in linux/CMakeLists.txt.
-  * See the documentation in windows/CMakeLists.txt.
+There are two active isolates when Stockfish engine is running. That interferes with Flutter's hot reload feature so you need to dispose it before attempting to reload.
 
-## Binding to native code
+```dart
+// sends the UCI quit command
+stockfish.stdin = 'quit';
 
-To use the native code, bindings in Dart are needed.
-To avoid writing these by hand, they are generated from the header file
-(`src/multistockfish.h`) by `package:ffigen`.
-Regenerate the bindings by running `dart run ffigen --config ffigen.yaml`.
-
-## Invoking native code
-
-Very short-running native functions can be directly invoked from any isolate.
-For example, see `sum` in `lib/multistockfish.dart`.
-
-Longer-running functions should be invoked on a helper isolate to avoid
-dropping frames in Flutter applications.
-For example, see `sumAsync` in `lib/multistockfish.dart`.
-
-## Flutter help
-
-For help getting started with Flutter, view our
-[online documentation](https://docs.flutter.dev), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
-
+// or even easier...
+stockfish.dispose();
+```
