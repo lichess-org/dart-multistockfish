@@ -15,6 +15,10 @@ This plugin supports the following Stockfish engines:
 > Only one instance can be created at a time. The `Stockfish()` constructor
 > will throw a StateError if called while another instance is running.
 
+> [!NOTE]
+> When using the NNUE flavor, you need to download the `.nnue` files before
+> starting an evaluation, since it is not embedded in the binary.
+
 ```dart
 import 'package:multistockfish/multistockfish.dart';
 

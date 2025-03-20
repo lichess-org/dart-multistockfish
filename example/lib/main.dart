@@ -20,7 +20,7 @@ class MyApp extends StatefulWidget {
 }
 
 class _AppState extends State<MyApp> {
-  StockfishFlavor flavor = StockfishFlavor.nnue;
+  StockfishFlavor flavor = StockfishFlavor.hce;
   late Stockfish stockfish;
 
   @override
