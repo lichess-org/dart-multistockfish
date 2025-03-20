@@ -26,19 +26,48 @@ class Stockfish {
   ///
   /// Throws a [StateError] if an active instance is being used.
   /// Owner must [dispose] it before a new instance can be created.
-  factory Stockfish(StockfishFlavor flavor) {
+  ///
+  /// When [flavor] is [StockfishFlavor.nnue], [smallNetPath] and [bigNetPath] must be provided.
+  factory Stockfish(
+    /// The flavor of Stockfish to use.
+    StockfishFlavor flavor, {
+
+    /// Full path to the small net file for NNUE evaluation.
+    String? smallNetPath,
+
+    /// Full path to the big net file for NNUE evaluation.
+    String? bigNetPath,
+  }) {
+    assert(
+      flavor == StockfishFlavor.hce ||
+          (smallNetPath != null && bigNetPath != null),
+      'NNUE evaluation requires smallNetPath and bigNetPath',
+    );
+
     if (_instance != null) {
       throw StateError('Multiple instances are not supported, yet.');
     }
 
-    _instance = Stockfish._(flavor);
+    _instance = Stockfish._(
+      flavor,
+      smallNetPath: smallNetPath,
+      bigNetPath: bigNetPath,
+    );
     return _instance!;
   }
 
   static Stockfish? _instance;
 
-  final StockfishFlavor _flavor;
-  StockfishBindings get _bindings => _getBindings(_flavor);
+  /// The flavor of Stockfish.
+  final StockfishFlavor flavor;
+
+  /// Full path to the small net file for NNUE evaluation.
+  final String? smallNetPath;
+
+  /// Full path to the big net file for NNUE evaluation.
+  final String? bigNetPath;
+
+  StockfishBindings get _bindings => _getBindings(flavor);
 
   final _state = _StockfishState();
   final _stdoutController = StreamController<String>.broadcast();
@@ -48,7 +77,7 @@ class Stockfish {
   late StreamSubscription _mainSubscription;
   late StreamSubscription _stdoutSubscription;
 
-  Stockfish._(this._flavor) {
+  Stockfish._(this.flavor, {this.smallNetPath, this.bigNetPath}) {
     _mainSubscription = _mainPort.listen(
       (message) => _cleanUp(message is int ? message : 1),
     );
@@ -64,12 +93,19 @@ class Stockfish {
 
     compute(
       _spawnIsolates,
-      _ComputeArgs([_mainPort.sendPort, _stdoutPort.sendPort], _flavor),
+      _ComputeArgs([_mainPort.sendPort, _stdoutPort.sendPort], flavor),
     ).then(
       (success) {
         final state = success ? StockfishState.ready : StockfishState.error;
+
         _logger.fine('The init isolate reported $state');
+
         _state._setValue(state);
+
+        if (flavor == StockfishFlavor.nnue) {
+          stdin = 'setoption name EvalFile value $bigNetPath';
+          stdin = 'setoption name EvalFileSmall value $smallNetPath';
+        }
       },
       onError: (error) {
         _logger.severe('The init isolate encountered an error $error');

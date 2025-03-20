@@ -1,5 +1,8 @@
 PODS:
   - Flutter (1.0.0)
+  - path_provider_foundation (0.0.1):
+    - Flutter
+    - FlutterMacOS
   - stockfish_hce (0.1.0):
     - Flutter
   - stockfish_nnue (0.1.0):
@@ -7,12 +10,15 @@ PODS:
 
 DEPENDENCIES:
   - Flutter (from `Flutter`)
+  - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
   - stockfish_hce (from `.symlinks/plugins/stockfish_hce/ios`)
   - stockfish_nnue (from `.symlinks/plugins/stockfish_nnue/ios`)
 
 EXTERNAL SOURCES:
   Flutter:
     :path: Flutter
+  path_provider_foundation:
+    :path: ".symlinks/plugins/path_provider_foundation/darwin"
   stockfish_hce:
     :path: ".symlinks/plugins/stockfish_hce/ios"
   stockfish_nnue:
@@ -20,8 +26,9 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
+  path_provider_foundation: 080d55be775b7414fd5a5ef3ac137b97b097e564
   stockfish_hce: 50daf373e522f367b6abacbb615fa85f4b78d1e6
-  stockfish_nnue: 70174cfc539fdfb619e269d91ae7f78200ac3abc
+  stockfish_nnue: 6037fdb97d271e807c9236c822ec4ed7569fc996
 
 PODFILE CHECKSUM: 4305caec6b40dde0ae97be1573c53de1882a07e5
 
