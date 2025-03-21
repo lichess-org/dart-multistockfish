@@ -84,7 +84,7 @@ class Stockfish {
 
     _stdoutSubscription = _stdoutPort.listen((message) {
       if (message is String) {
-        _logger.finest('The stdout isolate sent $message');
+        _logger.finest('[stdout] $message');
         _stdoutController.sink.add(message);
       } else {
         _logger.fine('The stdout isolate sent $message');
@@ -96,16 +96,31 @@ class Stockfish {
       _ComputeArgs([_mainPort.sendPort, _stdoutPort.sendPort], flavor),
     ).then(
       (success) {
-        final state = success ? StockfishState.ready : StockfishState.error;
+        final state = success ? StockfishState.starting : StockfishState.error;
 
         _logger.fine('The init isolate reported $state');
 
         _state._setValue(state);
 
-        if (flavor == StockfishFlavor.nnue) {
-          stdin = 'setoption name EvalFile value $bigNetPath';
-          stdin = 'setoption name EvalFileSmall value $smallNetPath';
-        }
+        // Wait for the engine to be ready by checking the first non-empty line (usually its name).
+        stdout
+            .firstWhere((line) => line.isNotEmpty)
+            .timeout(const Duration(seconds: 3))
+            .then(
+              (_) {
+                // The engine is ready.
+                _state._setValue(StockfishState.ready);
+
+                if (flavor == StockfishFlavor.nnue) {
+                  stdin = 'setoption name EvalFile value $bigNetPath';
+                  stdin = 'setoption name EvalFileSmall value $smallNetPath';
+                }
+              },
+              onError: (error) {
+                _logger.severe('The engine did not start in time: $error');
+                _cleanUp(1);
+              },
+            );
       },
       onError: (error) {
         _logger.severe('The init isolate encountered an error $error');
@@ -126,6 +141,8 @@ class Stockfish {
     if (stateValue != StockfishState.ready) {
       throw StateError('Stockfish is not ready ($stateValue)');
     }
+
+    _logger.finest('[stdin] $line');
 
     _bindings.stdinWrite('$line\n');
   }
@@ -250,7 +267,7 @@ class _IsolateArgs {
 
 class _StockfishState extends ChangeNotifier
     implements ValueListenable<StockfishState> {
-  StockfishState _value = StockfishState.starting;
+  StockfishState _value = StockfishState.initial;
 
   @override
   StockfishState get value => _value;
