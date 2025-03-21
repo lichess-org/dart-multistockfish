@@ -30,11 +30,11 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/stockfish_nnue/ios"
 
 SPEC CHECKSUMS:
-  fairy_stockfish: 85b305e0821bf649c3f8f27be6170f09942a702c
+  fairy_stockfish: 7b1edef94e3c1f225ab80ed149d50347975c135c
   Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
   path_provider_foundation: 080d55be775b7414fd5a5ef3ac137b97b097e564
   stockfish_hce: 0abfd18e5920c54ec3a5275ec5bc791e3fb933de
-  stockfish_nnue: f380ab1cef7cd6b52c6645f49e124122f88ae109
+  stockfish_nnue: 45a967954a1c4e683732e4e0648f832133393523
 
 PODFILE CHECKSUM: 4305caec6b40dde0ae97be1573c53de1882a07e5
 
