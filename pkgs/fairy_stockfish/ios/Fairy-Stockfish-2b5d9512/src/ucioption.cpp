@@ -34,7 +34,7 @@
 
 using std::string;
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 UCI::OptionsMap Options; // Global object
 
@@ -383,4 +383,4 @@ const std::string Option::get_type() const {
 
 } // namespace UCI
 
-} // namespace Stockfish
+} // namespace FairyStockfish

@@ -24,7 +24,7 @@
 #include <type_traits>
 #include <vector>
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 typedef std::pair<int, int> Range; // Option's min-max values
 typedef Range (RangeFun) (int);
@@ -158,6 +158,6 @@ public:
 
 #define UPDATE_ON_LAST() bool UNIQUE(p, __LINE__) = Tune::update_on_last = true
 
-} // namespace Stockfish
+} // namespace FairyStockfish
 
 #endif // #ifndef TUNE_H_INCLUDED

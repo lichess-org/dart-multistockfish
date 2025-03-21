@@ -28,7 +28,7 @@
 #include "position.h"
 #include "types.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 /// EndgameCode lists all supported endgame functions by corresponding codes
 
@@ -143,6 +143,6 @@ namespace Endgames {
   }
 }
 
-} // namespace Stockfish
+} // namespace FairyStockfish
 
 #endif // #ifndef ENDGAME_H_INCLUDED

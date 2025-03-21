@@ -26,7 +26,7 @@
 
 using std::string;
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 bool Tune::update_on_last;
 const UCI::Option* LastOption = nullptr;
@@ -109,7 +109,7 @@ template<> void Tune::Entry<Score>::read_option() {
 template<> void Tune::Entry<Tune::PostUpdate>::init_option() {}
 template<> void Tune::Entry<Tune::PostUpdate>::read_option() { value(); }
 
-} // namespace Stockfish
+} // namespace FairyStockfish
 
 
 // Init options with tuning session results instead of default values. Useful to
@@ -123,11 +123,11 @@ template<> void Tune::Entry<Tune::PostUpdate>::read_option() { value(); }
 
 #include <cmath>
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 void Tune::read_results() {
 
   /* ...insert your values here... */
 }
 
-} // namespace Stockfish
+} // namespace FairyStockfish

@@ -23,7 +23,7 @@
 #include "position.h"
 #include "types.h"
 
-namespace Stockfish::Pawns {
+namespace FairyStockfish::Pawns {
 
 /// Pawns::Entry contains various information about a pawn structure. A lookup
 /// to the pawn hash table (performed by calling the probe function) returns a
@@ -65,6 +65,6 @@ typedef HashTable<Entry, 131072> Table;
 
 Entry* probe(const Position& pos);
 
-} // namespace Stockfish::Pawns
+} // namespace FairyStockfish::Pawns
 
 #endif // #ifndef PAWNS_H_INCLUDED

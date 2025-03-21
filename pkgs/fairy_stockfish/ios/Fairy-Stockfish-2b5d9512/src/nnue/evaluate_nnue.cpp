@@ -32,7 +32,7 @@
 
 #include "evaluate_nnue.h"
 
-namespace Stockfish::Eval::NNUE {
+namespace FairyStockfish::Eval::NNUE {
 
   // Input feature converter
   LargePagePtr<FeatureTransformer> featureTransformer;
@@ -440,4 +440,4 @@ namespace Stockfish::Eval::NNUE {
   }
 
 
-} // namespace Stockfish::Eval::NNUE
+} // namespace FairyStockfish::Eval::NNUE

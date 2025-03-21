@@ -27,7 +27,7 @@
 
 using std::string;
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 VariantMap variants; // Global object
 
@@ -2211,4 +2211,4 @@ std::vector<std::string> VariantMap::get_keys() {
   return keys;
 }
 
-} // namespace Stockfish
+} // namespace FairyStockfish

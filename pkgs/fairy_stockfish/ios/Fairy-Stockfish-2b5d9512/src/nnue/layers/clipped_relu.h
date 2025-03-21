@@ -23,7 +23,7 @@
 
 #include "../nnue_common.h"
 
-namespace Stockfish::Eval::NNUE::Layers {
+namespace FairyStockfish::Eval::NNUE::Layers {
 
   // Clipped ReLU
   template <typename PreviousLayer>
@@ -186,6 +186,6 @@ namespace Stockfish::Eval::NNUE::Layers {
     PreviousLayer previousLayer;
   };
 
-}  // namespace Stockfish::Eval::NNUE::Layers
+}  // namespace FairyStockfish::Eval::NNUE::Layers
 
 #endif // NNUE_LAYERS_CLIPPED_RELU_H_INCLUDED

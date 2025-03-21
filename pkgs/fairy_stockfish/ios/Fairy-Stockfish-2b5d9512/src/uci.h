@@ -27,7 +27,7 @@
 
 #include "variant.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 class Position;
 
@@ -114,6 +114,6 @@ constexpr bool is_uci_dialect(Protocol p) {
 
 extern Protocol CurrentProtocol;
 
-} // namespace Stockfish
+} // namespace FairyStockfish
 
 #endif // #ifndef UCI_H_INCLUDED

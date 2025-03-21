@@ -19,7 +19,7 @@
 #ifndef MAGIC_H_INCLUDED
 #define MAGIC_H_INCLUDED
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 #ifdef PRECOMPUTED_MAGICS
 #define B(a, b) (Bitboard(a) << 64) ^ Bitboard(b)
@@ -1736,6 +1736,6 @@ namespace Stockfish {
 #undef B
 #endif
 
-} // namespace Stockfish
+} // namespace FairyStockfish
 
 #endif // #ifndef MAGIC_H_INCLUDED

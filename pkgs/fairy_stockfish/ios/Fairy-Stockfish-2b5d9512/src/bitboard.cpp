@@ -24,7 +24,7 @@
 #include "misc.h"
 #include "piece.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 uint8_t PopCnt16[1 << 16];
 uint8_t SquareDistance[SQUARE_NB][SQUARE_NB];
@@ -498,4 +498,4 @@ namespace {
   }
 }
 
-} // namespace Stockfish
+} // namespace FairyStockfish

@@ -22,7 +22,7 @@
 #include "endgame.h"
 #include "movegen.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 namespace {
 
@@ -1307,4 +1307,4 @@ Value Endgame<KK, EG_EVAL_RK>::operator()(const Position& pos) const {
   return pos.side_to_move() == WHITE ? result : -result;
 }
 
-} // namespace Stockfish
+} // namespace FairyStockfish

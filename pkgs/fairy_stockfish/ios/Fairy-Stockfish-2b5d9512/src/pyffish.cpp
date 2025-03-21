@@ -20,7 +20,7 @@
 #include "variant.h"
 #include "apiutil.h"
 
-using namespace Stockfish;
+using namespace FairyStockfish;
 
 static PyObject* PyFFishError;
 
@@ -200,7 +200,7 @@ extern "C" PyObject* pyffish_getSANmoves(PyObject* self, PyObject *args) {
             return NULL;
         }
     }
-    PyObject *Result = Py_BuildValue("O", sanMoves);  
+    PyObject *Result = Py_BuildValue("O", sanMoves);
     Py_XDECREF(sanMoves);
     return Result;
 }
@@ -226,7 +226,7 @@ extern "C" PyObject* pyffish_legalMoves(PyObject* self, PyObject *args) {
         Py_XDECREF(moveStr);
     }
 
-    PyObject *Result = Py_BuildValue("O", legalMoves);  
+    PyObject *Result = Py_BuildValue("O", legalMoves);
     Py_XDECREF(legalMoves);
     return Result;
 }
@@ -259,7 +259,7 @@ extern "C" PyObject* pyffish_givesCheck(PyObject* self, PyObject *args) {
 
     StateListPtr states(new std::deque<StateInfo>(1));
     buildPosition(pos, states, variant, fen, moveList, chess960);
-    return Py_BuildValue("O", Stockfish::checked(pos) ? Py_True : Py_False);
+    return Py_BuildValue("O", FairyStockfish::checked(pos) ? Py_True : Py_False);
 }
 
 // INPUT variant, fen, move list, move

@@ -57,7 +57,7 @@
 
 using namespace std;
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 const Variant* currentNnueVariant;
 
@@ -1733,4 +1733,4 @@ std::string Eval::trace(Position& pos) {
   return ss.str();
 }
 
-} // namespace Stockfish
+} // namespace FairyStockfish

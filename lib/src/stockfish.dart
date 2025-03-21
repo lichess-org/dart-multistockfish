@@ -7,21 +7,10 @@ import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 
 import 'bindings.dart';
+import 'stockfish_flavor.dart';
 import 'stockfish_state.dart';
 
 final _logger = Logger('Stockfish');
-
-/// The flavor of Stockfish to use.
-enum StockfishFlavor {
-  /// Stockfish with Hand Crafted Evaluation
-  hce,
-
-  /// Stockfish with NNUE Evaluation
-  nnue,
-
-  /// Multi-Variant Stockfish
-  fairy,
-}
 
 /// A Dart wrapper around the Stockfish chess engine.
 ///

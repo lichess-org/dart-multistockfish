@@ -31,7 +31,7 @@
 
 #include <pthread.h>
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 static const size_t TH_STACK_SIZE = 8 * 1024 * 1024;
 
@@ -60,15 +60,15 @@ public:
   void detach() { pthread_detach(thread); }
 };
 
-} // namespace Stockfish
+} // namespace FairyStockfish
 
 #else // Default case: use STL classes
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 typedef std::thread NativeThread;
 
-} // namespace Stockfish
+} // namespace FairyStockfish
 
 #endif
 

@@ -20,7 +20,7 @@
 
 #include "movepick.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 // Since continuation history grows quadratically with the number of piece types,
 // we need to reserve a limited number of slots and map piece types to these slots
@@ -276,4 +276,4 @@ top:
   return MOVE_NONE; // Silence warning
 }
 
-} // namespace Stockfish
+} // namespace FairyStockfish

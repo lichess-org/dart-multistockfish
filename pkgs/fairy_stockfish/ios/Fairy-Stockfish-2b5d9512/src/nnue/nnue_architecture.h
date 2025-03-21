@@ -29,7 +29,7 @@
 #include "layers/affine_transform.h"
 #include "layers/clipped_relu.h"
 
-namespace Stockfish::Eval::NNUE {
+namespace FairyStockfish::Eval::NNUE {
 
   // Input features used in evaluation function
   using FeatureSet = Features::HalfKAv2Variants;
@@ -55,6 +55,6 @@ namespace Stockfish::Eval::NNUE {
   static_assert(Network::OutputDimensions == 1, "");
   static_assert(std::is_same<Network::OutputType, std::int32_t>::value, "");
 
-}  // namespace Stockfish::Eval::NNUE
+}  // namespace FairyStockfish::Eval::NNUE
 
 #endif // #ifndef NNUE_ARCHITECTURE_H_INCLUDED

@@ -24,7 +24,31 @@
 #define CHILD_READ_FD (pipes[PARENT_WRITE_PIPE][READ_FD])
 #define CHILD_WRITE_FD (pipes[PARENT_READ_PIPE][WRITE_FD])
 
-int main(int, char **);
+namespace PSQT {
+  void init();
+}
+
+namespace StockfishHCE
+{
+  int main(int argc, char* argv[]) {
+
+    std::cout << engine_info() << std::endl;
+
+    UCI::init(Options);
+    PSQT::init();
+    Bitboards::init();
+    Position::init();
+    Bitbases::init();
+    Endgames::init();
+    Threads.set(Options["Threads"]);
+    Search::clear(); // After threads are up
+
+    UCI::loop(argc, argv);
+
+    Threads.set(0);
+    return 0;
+  }
+}
 
 const char *QUITOK = "quitok\n";
 int pipes[NUM_PIPES][2];
@@ -45,7 +69,7 @@ int stockfish_main()
 
   int argc = 1;
   char *argv[] = {""};
-  int exitCode = main(argc, argv);
+  int exitCode = StockfishHCE::main(argc, argv);
 
   std::cout << QUITOK << std::flush;
 

@@ -23,14 +23,14 @@
 
 #include "types.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 namespace Bitbases {
 
 void init();
 bool probe(Square wksq, Square wpsq, Square bksq, Color us);
 
-} // namespace Stockfish::Bitbases
+} // namespace FairyStockfish::Bitbases
 
 namespace Bitboards {
 
@@ -38,7 +38,7 @@ void init_pieces();
 void init();
 std::string pretty(Bitboard b);
 
-} // namespace Stockfish::Bitboards
+} // namespace FairyStockfish::Bitboards
 
 #ifdef LARGEBOARDS
 constexpr Bitboard AllSquares = ((~Bitboard(0)) >> 8);
@@ -782,6 +782,6 @@ inline PieceType pop_msb(PieceSet& ps) {
   return pt;
 }
 
-} // namespace Stockfish
+} // namespace FairyStockfish
 
 #endif // #ifndef BITBOARD_H_INCLUDED

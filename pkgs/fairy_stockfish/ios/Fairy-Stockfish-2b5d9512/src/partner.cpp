@@ -24,7 +24,7 @@
 #include "thread.h"
 #include "uci.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 PartnerHandler Partner; // Global object
 
@@ -155,4 +155,4 @@ template void PartnerHandler::ptell<HUMAN>(const std::string&);
 template void PartnerHandler::ptell<FAIRY>(const std::string&);
 template void PartnerHandler::ptell<ALL_PARTNERS>(const std::string&);
 
-} // namespace Stockfish
+} // namespace FairyStockfish

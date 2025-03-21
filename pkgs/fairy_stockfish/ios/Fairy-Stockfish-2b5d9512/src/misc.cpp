@@ -61,7 +61,7 @@ typedef bool(*fun3_t)(HANDLE, CONST GROUP_AFFINITY*, PGROUP_AFFINITY);
 
 using namespace std;
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 namespace {
 
@@ -653,4 +653,4 @@ void init(int argc, char* argv[]) {
 
 } // namespace CommandLine
 
-} // namespace Stockfish
+} // namespace FairyStockfish

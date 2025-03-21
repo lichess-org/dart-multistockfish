@@ -37,7 +37,7 @@
 #include "xboard.h"
 #include "syzygy/tbprobe.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 namespace Search {
 
@@ -440,7 +440,7 @@ void Thread::search() {
           while (true)
           {
               Depth adjustedDepth = std::max(1, rootDepth - failedHighCnt - searchAgainCounter);
-              bestValue = Stockfish::search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
+              bestValue = FairyStockfish::search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
               // Bring the best move to the front. It is critical that sorting
               // is done with a stable algorithm because all the values but the
@@ -2139,4 +2139,4 @@ void Tablebases::rank_root_moves(Position& pos, Search::RootMoves& rootMoves) {
     }
 }
 
-} // namespace Stockfish
+} // namespace FairyStockfish

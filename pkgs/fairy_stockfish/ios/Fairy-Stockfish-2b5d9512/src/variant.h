@@ -31,7 +31,7 @@
 #include "types.h"
 #include "bitboard.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 /// Variant struct stores information needed to determine the rules of a variant.
 
@@ -243,6 +243,6 @@ private:
 
 extern VariantMap variants;
 
-} // namespace Stockfish
+} // namespace FairyStockfish
 
 #endif // #ifndef VARIANT_H_INCLUDED

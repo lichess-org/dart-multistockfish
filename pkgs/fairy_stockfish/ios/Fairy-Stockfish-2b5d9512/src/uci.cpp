@@ -36,7 +36,7 @@
 
 using namespace std;
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 extern vector<string> setup_bench(const Position&, istream&);
 
@@ -611,4 +611,4 @@ bool UCI::is_valid_option(UCI::OptionsMap& options, std::string& name) {
 
 Protocol CurrentProtocol = UCI_GENERAL; // Global object
 
-} // namespace Stockfish
+} // namespace FairyStockfish

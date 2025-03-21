@@ -50,11 +50,11 @@
 #include <windows.h>
 #endif
 
-using namespace Stockfish::Tablebases;
+using namespace FairyStockfish::Tablebases;
 
-int Stockfish::Tablebases::MaxCardinality;
+int FairyStockfish::Tablebases::MaxCardinality;
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 namespace {
 
@@ -1633,4 +1633,4 @@ bool Tablebases::root_probe_wdl(Position& pos, Search::RootMoves& rootMoves) {
     return true;
 }
 
-} // namespace Stockfish
+} // namespace FairyStockfish

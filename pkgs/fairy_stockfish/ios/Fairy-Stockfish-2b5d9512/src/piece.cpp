@@ -23,7 +23,7 @@
 #include "types.h"
 #include "piece.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 PieceMap pieceMap; // Global object
 
@@ -240,4 +240,4 @@ void PieceMap::clear_all() {
   clear();
 }
 
-} // namespace Stockfish
+} // namespace FairyStockfish

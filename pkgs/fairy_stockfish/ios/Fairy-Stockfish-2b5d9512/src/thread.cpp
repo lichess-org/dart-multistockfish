@@ -28,7 +28,7 @@
 #include "tt.h"
 #include "xboard.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 ThreadPool Threads; // Global object
 
@@ -289,4 +289,4 @@ void ThreadPool::wait_for_search_finished() const {
             th->wait_for_search_finished();
 }
 
-} // namespace Stockfish
+} // namespace FairyStockfish

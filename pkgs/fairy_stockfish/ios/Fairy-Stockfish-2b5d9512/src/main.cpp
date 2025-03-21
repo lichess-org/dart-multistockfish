@@ -33,7 +33,7 @@
 #include "xboard.h"
 
 
-using namespace Stockfish;
+using namespace FairyStockfish;
 
 int main(int argc, char* argv[]) {
 

@@ -34,7 +34,7 @@
 
 #include "nnue/nnue_accumulator.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 /// StateInfo struct stores information needed to restore a Position object to
 /// its previous state when we retract a move. Whenever a move is made on the
@@ -1582,6 +1582,6 @@ inline bool Position::can_drop(Color c, PieceType pt) const {
   return variant()->freeDrops || count_in_hand(c, pt) > 0;
 }
 
-} // namespace Stockfish
+} // namespace FairyStockfish
 
 #endif // #ifndef POSITION_H_INCLUDED

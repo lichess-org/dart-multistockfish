@@ -28,7 +28,7 @@
 
 #include "types.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 std::string engine_info(bool to_uci = false, bool to_xboard = false);
 std::string compiler_info();
@@ -195,6 +195,6 @@ namespace CommandLine {
   extern std::string workingDirectory; // path of the working directory
 }
 
-} // namespace Stockfish
+} // namespace FairyStockfish
 
 #endif // #ifndef MISC_H_INCLUDED

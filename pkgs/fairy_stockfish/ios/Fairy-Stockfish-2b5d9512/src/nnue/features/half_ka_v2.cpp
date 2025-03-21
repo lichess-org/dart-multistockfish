@@ -22,7 +22,7 @@
 
 #include "../../position.h"
 
-namespace Stockfish::Eval::NNUE::Features {
+namespace FairyStockfish::Eval::NNUE::Features {
 
   // Map square to numbering on 8x8 board
   constexpr Square to_chess_square(Square s) {
@@ -87,4 +87,4 @@ namespace Stockfish::Eval::NNUE::Features {
     return st->dirtyPiece.piece[0] == make_piece(perspective, KING);
   }
 
-}  // namespace Stockfish::Eval::NNUE::Features
+}  // namespace FairyStockfish::Eval::NNUE::Features

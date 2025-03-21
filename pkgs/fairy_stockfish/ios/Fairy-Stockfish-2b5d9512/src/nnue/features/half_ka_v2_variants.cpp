@@ -22,7 +22,7 @@
 
 #include "../../position.h"
 
-namespace Stockfish::Eval::NNUE::Features {
+namespace FairyStockfish::Eval::NNUE::Features {
 
   // Map square to numbering on variant board
   inline Square to_variant_square(Square s, const Position& pos) {
@@ -109,4 +109,4 @@ namespace Stockfish::Eval::NNUE::Features {
     return st->dirtyPiece.piece[0] == make_piece(perspective, pos.nnue_king()) || pos.flip_enclosed_pieces();
   }
 
-}  // namespace Stockfish::Eval::NNUE::Features
+}  // namespace FairyStockfish::Eval::NNUE::Features

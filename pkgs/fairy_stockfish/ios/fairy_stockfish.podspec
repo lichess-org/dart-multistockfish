@@ -23,7 +23,7 @@ Multi-variant Stockfish
     'Fairy-Stockfish-2b5d9512/src/Makefile_js',
     'Fairy-Stockfish-2b5d9512/src/variants.ini',
     'Fairy-Stockfish-2b5d9512/src/incbin/UNLICENCE',
-    'Fairy-Stockfish-2b5d9512/src/**/{pyffish,ffishjs}.cpp',
+    'Fairy-Stockfish-2b5d9512/src/**/{main,pyffish,ffishjs}.cpp',
   ]
   s.dependency 'Flutter'
   s.platform = :ios, '12.0'
@@ -35,8 +35,8 @@ Multi-variant Stockfish
   s.xcconfig = {
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
     'CLANG_CXX_LIBRARY' => 'libc++',
-    'OTHER_CPLUSPLUSFLAGS[config=Debug]' => '$(inherited) -std=c++17 -fno-strict-aliasing -mdynamic-no-pic -DNNUE_EMBEDDING_OFF -DUSE_PTHREADS -DIS_64BIT -DUSE_POPCNT',
-    'OTHER_LDFLAGS[config=Debug]' => '$(inherited) -std=c++17 -fno-strict-aliasing -mdynamic-no-pic -DNNUE_EMBEDDING_OFF -DUSE_PTHREADS -DIS_64BIT -DUSE_POPCNT',
+    'OTHER_CPLUSPLUSFLAGS' => '$(inherited) -std=c++17 -fno-strict-aliasing -mdynamic-no-pic -DNNUE_EMBEDDING_OFF -DUSE_PTHREADS -DIS_64BIT -DUSE_POPCNT',
+    'OTHER_LDFLAGS' => '$(inherited) -std=c++17 -fno-strict-aliasing -mdynamic-no-pic -DNNUE_EMBEDDING_OFF -DUSE_PTHREADS -DIS_64BIT -DUSE_POPCNT',
     'OTHER_CPLUSPLUSFLAGS[config=Release]' => '$(inherited) -fno-exceptions -std=c++17 -DNNUE_EMBEDDING_OFF -DUSE_PTHREADS -DNDEBUG -O3 -DIS_64BIT -DUSE_POPCNT -DUSE_NEON -flto=full',
     'OTHER_LDFLAGS[config=Release]' => '$(inherited) -fno-exceptions -std=c++17 -DNNUE_EMBEDDING_OFF -DUSE_PTHREADS -DNDEBUG -O3 -DIS_64BIT -DUSE_POPCNT -DUSE_NEON -flto=full'
   }

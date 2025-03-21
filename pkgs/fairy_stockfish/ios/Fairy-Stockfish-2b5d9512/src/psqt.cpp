@@ -31,7 +31,7 @@
 #include "misc.h"
 
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 Value EvalPieceValue[PHASE_NB][PIECE_NB];
 Value CapturePieceValue[PHASE_NB][PIECE_NB];
@@ -224,7 +224,7 @@ void init(const Variant* v) {
           if (v->blastOnCapture)
               score += make_score(mg_value(score) * 3 / 2, eg_value(score));
       }
-      
+
       const PieceInfo* pi = pieceMap.find(pt)->second;
       bool isSlider = pi->slider[0][MODALITY_QUIET].size() || pi->slider[0][MODALITY_CAPTURE].size() || pi->hopper[0][MODALITY_QUIET].size() || pi->hopper[0][MODALITY_CAPTURE].size();
       bool isPawn = !isSlider && pi->steps[0][MODALITY_QUIET].size() && !std::any_of(pi->steps[0][MODALITY_QUIET].begin(), pi->steps[0][MODALITY_QUIET].end(), [](const std::pair<const Direction, int>& d) { return d.first < SOUTH / 2; });
@@ -248,7 +248,7 @@ void init(const Variant* v) {
           score = make_score(mg_value(score) * 7000 / (7000 + mg_value(score)),
                              eg_value(score) * 7000 / (7000 + eg_value(score)));
 
-      // In variants where checks are prohibited, strong pieces are less mobile, so limit their value 
+      // In variants where checks are prohibited, strong pieces are less mobile, so limit their value
       if (!v->checking)
           score = make_score(std::min(mg_value(score), Value(1800)) / 2,
                              std::min(eg_value(score), Value(1800)) * 3 / 5);
@@ -352,4 +352,4 @@ void init(const Variant* v) {
 
 } // namespace PSQT
 
-} // namespace Stockfish
+} // namespace FairyStockfish

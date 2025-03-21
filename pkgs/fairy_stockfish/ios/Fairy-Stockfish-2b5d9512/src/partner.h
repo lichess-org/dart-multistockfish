@@ -25,7 +25,7 @@
 #include "misc.h"
 #include "position.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 /// PartnerHandler manages the communication with the partner
 /// in games played on two boards, such as bughouse.
@@ -51,6 +51,6 @@ struct PartnerHandler {
 
 extern PartnerHandler Partner;
 
-} // namespace Stockfish
+} // namespace FairyStockfish
 
 #endif // #ifndef PARTNER_H_INCLUDED

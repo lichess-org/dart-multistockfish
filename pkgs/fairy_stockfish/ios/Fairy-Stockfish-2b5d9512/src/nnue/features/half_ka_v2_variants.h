@@ -28,11 +28,11 @@
 
 #include "half_ka_v2.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
   struct StateInfo;
 }
 
-namespace Stockfish::Eval::NNUE::Features {
+namespace FairyStockfish::Eval::NNUE::Features {
 
   // Feature HalfKAv2: Combination of the position of own king
   // and the position of pieces
@@ -89,6 +89,6 @@ namespace Stockfish::Eval::NNUE::Features {
     static bool requires_refresh(StateInfo* st, Color perspective, const Position& pos);
   };
 
-}  // namespace Stockfish::Eval::NNUE::Features
+}  // namespace FairyStockfish::Eval::NNUE::Features
 
 #endif // #ifndef NNUE_FEATURES_HALF_KA_V2_VARIANTS_H_INCLUDED

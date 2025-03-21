@@ -23,7 +23,7 @@
 #include "bitboard.h"
 #include "types.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 namespace {
 
@@ -174,4 +174,4 @@ namespace {
 
 } // namespace
 
-} // namespace Stockfish
+} // namespace FairyStockfish

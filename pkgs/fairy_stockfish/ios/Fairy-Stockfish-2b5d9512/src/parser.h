@@ -23,7 +23,7 @@
 
 #include "variant.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 class Config : public std::map<std::string, std::string> {
 public:
@@ -54,6 +54,6 @@ private:
     template <bool Current = true, class T> bool parse_attribute(const std::string& key, T& target, std::string pieceToChar);
 };
 
-} // namespace Stockfish
+} // namespace FairyStockfish
 
 #endif // #ifndef PARSER_H_INCLUDED

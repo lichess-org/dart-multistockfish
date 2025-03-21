@@ -23,7 +23,7 @@
 
 #include "types.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 class Position;
 
@@ -102,6 +102,6 @@ private:
 #endif
 };
 
-} // namespace Stockfish
+} // namespace FairyStockfish
 
 #endif // #ifndef MOVEGEN_H_INCLUDED

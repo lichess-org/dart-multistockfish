@@ -34,7 +34,7 @@
 
 using std::string;
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 namespace Zobrist {
 
@@ -2856,7 +2856,7 @@ bool Position::is_immediate_game_end(Value& result, int ply) const {
           current |= newBitboard;
       }
   }
-  
+
   if (connect_nxn())
   {
       Bitboard connectors = connectPieces;
@@ -3293,4 +3293,4 @@ bool Position::pos_is_ok() const {
   return true;
 }
 
-} // namespace Stockfish
+} // namespace FairyStockfish

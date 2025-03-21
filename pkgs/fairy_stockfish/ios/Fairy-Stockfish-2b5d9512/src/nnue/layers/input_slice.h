@@ -23,7 +23,7 @@
 
 #include "../nnue_common.h"
 
-namespace Stockfish::Eval::NNUE::Layers {
+namespace FairyStockfish::Eval::NNUE::Layers {
 
 // Input layer
 template <IndexType OutDims, IndexType Offset = 0>
@@ -68,6 +68,6 @@ class InputSlice {
  private:
 };
 
-}  // namespace Stockfish::Eval::NNUE::Layers
+}  // namespace FairyStockfish::Eval::NNUE::Layers
 
 #endif // #ifndef NNUE_LAYERS_INPUT_SLICE_H_INCLUDED

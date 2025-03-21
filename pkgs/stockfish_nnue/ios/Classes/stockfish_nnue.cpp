@@ -22,7 +22,25 @@
 #define CHILD_READ_FD (pipes[PARENT_WRITE_PIPE][READ_FD])
 #define CHILD_WRITE_FD (pipes[PARENT_READ_PIPE][WRITE_FD])
 
-int main(int, char **);
+namespace StockfishNNUE {
+  using namespace Stockfish;
+
+  int main(int argc, char* argv[]) {
+
+    std::cout << engine_info() << std::endl;
+
+    Bitboards::init();
+    Position::init();
+
+    UCIEngine uci(argc, argv);
+
+    Tune::init(uci.engine_options());
+
+    uci.loop();
+
+    return 0;
+  }
+}
 
 const char *QUITOK = "quitok\n";
 int pipes[NUM_PIPES][2];
@@ -43,7 +61,7 @@ int stockfish_main()
 
   int argc = 1;
   char *argv[] = {""};
-  int exitCode = main(argc, argv);
+  int exitCode = StockfishNNUE::main(argc, argv);
 
   std::cout << QUITOK << std::flush;
 

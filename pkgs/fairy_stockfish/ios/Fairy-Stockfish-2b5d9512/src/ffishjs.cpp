@@ -40,7 +40,7 @@
 
 using namespace emscripten;
 
-using namespace Stockfish;
+using namespace FairyStockfish;
 
 void initialize_stockfish() {
   pieceMap.init();
@@ -272,11 +272,11 @@ public:
   }
 
   bool has_insufficient_material(bool turn) const {
-    return Stockfish::has_insufficient_material(turn ? WHITE : BLACK, pos);
+    return FairyStockfish::has_insufficient_material(turn ? WHITE : BLACK, pos);
   }
 
   bool is_insufficient_material() const {
-    return Stockfish::has_insufficient_material(WHITE, pos) && Stockfish::has_insufficient_material(BLACK, pos);
+    return FairyStockfish::has_insufficient_material(WHITE, pos) && FairyStockfish::has_insufficient_material(BLACK, pos);
   }
 
   bool is_game_over() const {
@@ -329,7 +329,7 @@ public:
   }
 
   std::string checked_pieces() const {
-    Bitboard checked = Stockfish::checked(pos);
+    Bitboard checked = FairyStockfish::checked(pos);
     std::string squares;
     while (checked) {
       Square sr = pop_lsb(checked);
@@ -341,7 +341,7 @@ public:
   }
 
   bool is_check() const {
-    return Stockfish::checked(pos);
+    return FairyStockfish::checked(pos);
   }
 
   bool is_bikjang() const {

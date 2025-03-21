@@ -21,6 +21,7 @@ Stockfish using Hand Crafted Evaluation
   s.source_files = 'Classes/**/*', 'Stockfish11/src/**/*'
   s.exclude_files = [
     'Stockfish11/src/Makefile',
+    'Stockfish11/src/main.cpp',
   ]
   s.dependency 'Flutter'
   s.platform = :ios, '12.0'
@@ -28,10 +29,12 @@ Stockfish using Hand Crafted Evaluation
   s.xcconfig = {
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++11',
     'CLANG_CXX_LIBRARY' => 'libc++',
-    'OTHER_CPLUSPLUSFLAGS[config=Debug]' => '$(inherited) -std=c++11 -mdynamic-no-pic -DIS_64BIT -DUSE_POPCNT',
-    'OTHER_LDFLAGS[config=Debug]' => '$(inherited) -std=c++11 -mdynamic-no-pic -DIS_64BIT -DUSE_POPCNT',
-    'OTHER_CPLUSPLUSFLAGS[config=Release]' => '$(inherited) -fno-exceptions -std=c++11 -mdynamic-no-pic -DIS_64BIT -DUSE_POPCNT -DNDEBUG -O3 -flto',
-    'OTHER_LDFLAGS[config=Release]' => '$(inherited) -fno-exceptions -std=c++11 -mdynamic-no-pic -DIS_64BIT -DUSE_POPCNT -DNDEBUG -O3 -flto'
+    'OTHER_CPLUSPLUSFLAGS' => '-std=c++11 -mdynamic-no-pic -DIS_64BIT -DUSE_POPCNT',
+    'OTHER_LDFLAGS' => '-std=c++11 -mdynamic-no-pic -DIS_64BIT -DUSE_POPCNT',
+    'OTHER_CPLUSPLUSFLAGS[config=Profile]' => '$(inherited) -fno-exceptions -DNDEBUG -O3 -flto',
+    'OTHER_LDFLAGS[config=Profile]' => '$(inherited) -fno-exceptions -DNDEBUG -O3 -flto',
+    'OTHER_CPLUSPLUSFLAGS[config=Release]' => '$(inherited) -fno-exceptions -DNDEBUG -O3 -flto',
+    'OTHER_LDFLAGS[config=Release]' => '$(inherited) -fno-exceptions -DNDEBUG -O3 -flto',
   }
 
   # Flutter.framework does not contain a i386 slice.

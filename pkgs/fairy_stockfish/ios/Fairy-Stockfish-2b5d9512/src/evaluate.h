@@ -26,7 +26,7 @@
 
 #include "variant.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 class Position;
 
@@ -61,6 +61,6 @@ namespace Eval {
 
 extern const Variant* currentNnueVariant;
 
-} // namespace Stockfish
+} // namespace FairyStockfish
 
 #endif // #ifndef EVALUATE_H_INCLUDED

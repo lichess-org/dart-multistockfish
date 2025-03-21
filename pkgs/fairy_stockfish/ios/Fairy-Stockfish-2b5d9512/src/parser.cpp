@@ -24,7 +24,7 @@
 #include "piece.h"
 #include "types.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 namespace {
 
@@ -543,7 +543,7 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("adjudicateFullBoard", v->adjudicateFullBoard);
     parse_attribute("countingRule", v->countingRule);
     parse_attribute("castlingWins", v->castlingWins);
-    
+
     // Report invalid options
     if (DoCheck)
     {
@@ -648,4 +648,4 @@ template Variant* VariantParser<false>::parse();
 template Variant* VariantParser<true>::parse(Variant* v);
 template Variant* VariantParser<false>::parse(Variant* v);
 
-} // namespace Stockfish
+} // namespace FairyStockfish

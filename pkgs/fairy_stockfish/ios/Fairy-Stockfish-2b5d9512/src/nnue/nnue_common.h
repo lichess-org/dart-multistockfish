@@ -45,7 +45,7 @@
 #include <arm_neon.h>
 #endif
 
-namespace Stockfish::Eval::NNUE {
+namespace FairyStockfish::Eval::NNUE {
 
   // Version of the evaluation file
   constexpr std::uint32_t Version = 0x7AF32F20u;
@@ -159,6 +159,6 @@ namespace Stockfish::Eval::NNUE {
               write_little_endian<IntType>(stream, values[i]);
   }
 
-}  // namespace Stockfish::Eval::NNUE
+}  // namespace FairyStockfish::Eval::NNUE
 
 #endif // #ifndef NNUE_COMMON_H_INCLUDED

@@ -28,7 +28,7 @@
 #include "uci.h"
 #include "xboard.h"
 
-namespace Stockfish {
+namespace FairyStockfish {
 
 namespace {
 
@@ -493,4 +493,4 @@ void StateMachine::process_command(std::string token, std::istringstream& is) {
 
 } // namespace XBoard
 
-} // namespace Stockfish
+} // namespace FairyStockfish

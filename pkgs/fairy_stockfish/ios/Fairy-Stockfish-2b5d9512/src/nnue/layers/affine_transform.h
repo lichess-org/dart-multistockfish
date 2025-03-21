@@ -24,7 +24,7 @@
 #include <iostream>
 #include "../nnue_common.h"
 
-namespace Stockfish::Eval::NNUE::Layers {
+namespace FairyStockfish::Eval::NNUE::Layers {
 
   // Affine transformation layer
   template <typename PreviousLayer, IndexType OutDims>
@@ -430,6 +430,6 @@ namespace Stockfish::Eval::NNUE::Layers {
     alignas(CacheLineSize) WeightType weights[OutputDimensions * PaddedInputDimensions];
   };
 
-}  // namespace Stockfish::Eval::NNUE::Layers
+}  // namespace FairyStockfish::Eval::NNUE::Layers
 
 #endif // #ifndef NNUE_LAYERS_AFFINE_TRANSFORM_H_INCLUDED
