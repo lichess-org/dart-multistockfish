@@ -20,7 +20,9 @@ final _smallNetUrl = Uri.parse('$_kDownloadUrl$_kSmallNet');
 void main() {
   Logger.root.level = Level.ALL;
   Logger.root.onRecord.listen((record) {
-    debugPrint('${record.level.name}: ${record.time}: ${record.message}');
+    debugPrint(
+      '${record.level >= Level.WARNING ? record.level.name : ''} ${record.loggerName}: ${record.message}',
+    );
   });
 
   runApp(const MyApp());
@@ -35,7 +37,7 @@ class MyApp extends StatefulWidget {
 }
 
 class _AppState extends State<MyApp> {
-  Directory? appDocumentsDirectory;
+  Directory? appSupportDirectory;
   StockfishFlavor flavor = StockfishFlavor.hce;
   late Stockfish stockfish;
 
@@ -57,9 +59,9 @@ class _AppState extends State<MyApp> {
   }
 
   Future<void> _fetchNNUEFiles() async {
-    appDocumentsDirectory ??= await getApplicationDocumentsDirectory();
-    final bigNet = File('${appDocumentsDirectory!.path}/$_kBigNet');
-    final smallNet = File('${appDocumentsDirectory!.path}/$_kSmallNet');
+    appSupportDirectory ??= await getApplicationSupportDirectory();
+    final bigNet = File('${appSupportDirectory!.path}/$_kBigNet');
+    final smallNet = File('${appSupportDirectory!.path}/$_kSmallNet');
     if (await bigNet.exists() && await smallNet.exists()) {
       _nnueFilesCompleter.complete((
         bigNetPath: bigNet.path,
@@ -68,7 +70,7 @@ class _AppState extends State<MyApp> {
       return;
     }
 
-    final dir = Directory(appDocumentsDirectory!.path);
+    final dir = Directory(appSupportDirectory!.path);
     await for (final entity in dir.list(followLinks: false)) {
       if (entity is File && entity.path.endsWith('.nnue')) {
         debugPrint('Deleting existing nnue ${entity.path}');
@@ -181,9 +183,8 @@ class _AppState extends State<MyApp> {
                         items: StockfishFlavor.values
                             .where(
                               (flavor) =>
-                                  flavor == StockfishFlavor.hce ||
-                                  snapshot.hasData &&
-                                      flavor == StockfishFlavor.nnue,
+                                  flavor != StockfishFlavor.nnue ||
+                                  snapshot.hasData,
                             )
                             .map(
                               (flavor) => DropdownMenuItem(
@@ -252,7 +253,8 @@ class _AppState extends State<MyApp> {
                   children: [
                         'd',
                         'isready',
-                        'go infinite',
+                        'ucinewgame',
+                        'position startpos',
                         'go movetime 3000',
                         'stop',
                         'quit',
@@ -278,7 +280,7 @@ class _AppState extends State<MyApp> {
   }
 }
 
-Future<File> downloadFile(
+Future<void> downloadFile(
   Uri url,
   File file, {
   void Function(int received, int length)? onProgress,
@@ -292,11 +294,23 @@ Future<File> downloadFile(
 
   int received = 0;
 
-  return await response.stream
-      .map((s) {
-        received += s.length;
-        onProgress?.call(received, response.contentLength!);
-        return s;
-      })
-      .pipe(sink);
+  try {
+    await response.stream
+        .map((s) {
+          received += s.length;
+          onProgress?.call(received, response.contentLength!);
+          return s;
+        })
+        .pipe(sink);
+  } catch (e) {
+    debugPrint('Failed to download file: $e');
+  } finally {
+    try {
+      await sink.flush();
+      await sink.close();
+    } on FileSystemException catch (e) {
+      debugPrint('Failed to save file: $e');
+    }
+    httpClient.close();
+  }
 }

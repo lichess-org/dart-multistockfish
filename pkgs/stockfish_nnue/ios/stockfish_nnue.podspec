@@ -18,7 +18,10 @@ Stockfish using NNUE Evaluation.
   s.author           = { 'lichess.org' => 'contact@lichess.org' }
   s.source = { :git => pubspec['repository'], :tag => s.version.to_s }
   s.source_files = 'Classes/**/*', 'Stockfish17/src/**/*'
-  s.exclude_files = 'Stockfish17/src/incbin/UNLICENCE'
+  s.exclude_files = [
+    'Stockfish17/src/Makefile',
+    'Stockfish17/src/incbin/UNLICENCE',
+  ]
   s.dependency 'Flutter'
   s.platform = :ios, '12.0'
 

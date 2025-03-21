@@ -6,6 +6,7 @@ This plugin supports the following Stockfish engines:
 
 * Stockfish 11 with the handcrafted evaluation function (HCE)
 * Stockfish 17 with the NNUE evaluation function
+* Fairy-Stockfish for chess variants
 
 ## Usage
 

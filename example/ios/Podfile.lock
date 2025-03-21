@@ -1,4 +1,6 @@
 PODS:
+  - fairy_stockfish (0.1.0):
+    - Flutter
   - Flutter (1.0.0)
   - path_provider_foundation (0.0.1):
     - Flutter
@@ -9,12 +11,15 @@ PODS:
     - Flutter
 
 DEPENDENCIES:
+  - fairy_stockfish (from `.symlinks/plugins/fairy_stockfish/ios`)
   - Flutter (from `Flutter`)
   - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
   - stockfish_hce (from `.symlinks/plugins/stockfish_hce/ios`)
   - stockfish_nnue (from `.symlinks/plugins/stockfish_nnue/ios`)
 
 EXTERNAL SOURCES:
+  fairy_stockfish:
+    :path: ".symlinks/plugins/fairy_stockfish/ios"
   Flutter:
     :path: Flutter
   path_provider_foundation:
@@ -25,10 +30,11 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/stockfish_nnue/ios"
 
 SPEC CHECKSUMS:
+  fairy_stockfish: a26ecc51afbb709af13906bf697f1deb9168a68d
   Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
   path_provider_foundation: 080d55be775b7414fd5a5ef3ac137b97b097e564
-  stockfish_hce: 50daf373e522f367b6abacbb615fa85f4b78d1e6
-  stockfish_nnue: 6037fdb97d271e807c9236c822ec4ed7569fc996
+  stockfish_hce: f6c393436f4f0a2e9d687c67b81e7198b6d5c620
+  stockfish_nnue: 0445ae551ed45853b4e508525d71ac07099b5071
 
 PODFILE CHECKSUM: 4305caec6b40dde0ae97be1573c53de1882a07e5
 

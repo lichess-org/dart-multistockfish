@@ -18,9 +18,16 @@ enum StockfishFlavor {
 
   /// Stockfish with NNUE Evaluation
   nnue,
+
+  /// Multi-Variant Stockfish
+  fairy,
 }
 
-/// A wrapper for Stockfish C++ engine.
+/// A Dart wrapper around the Stockfish chess engine.
+///
+/// The engine is started in a separate isolate.
+///
+/// Different flavors of Stockfish can be used by specifying the [flavor].
 class Stockfish {
   /// Creates a new Stockfish engine.
   ///
@@ -39,13 +46,13 @@ class Stockfish {
     String? bigNetPath,
   }) {
     assert(
-      flavor == StockfishFlavor.hce ||
+      flavor != StockfishFlavor.nnue ||
           (smallNetPath != null && bigNetPath != null),
       'NNUE evaluation requires smallNetPath and bigNetPath',
     );
 
     if (_instance != null) {
-      throw StateError('Multiple instances are not supported, yet.');
+      throw StateError('Multiple instances are not supported.');
     }
 
     _instance = Stockfish._(
@@ -178,6 +185,7 @@ DynamicLibrary _openDynamicLibrary(String libName) {
 
 StockfishBindings? _hceBindings;
 StockfishBindings? _nnueBindings;
+StockfishBindings? _fairyBindings;
 
 StockfishBindings _getBindings(StockfishFlavor flavor) {
   switch (flavor) {
@@ -189,6 +197,11 @@ StockfishBindings _getBindings(StockfishFlavor flavor) {
         _openDynamicLibrary('stockfish_nnue'),
       );
       return _nnueBindings!;
+    case StockfishFlavor.fairy:
+      _fairyBindings ??= StockfishBindings(
+        _openDynamicLibrary('fairy_stockfish'),
+      );
+      return _fairyBindings!;
   }
 }
 

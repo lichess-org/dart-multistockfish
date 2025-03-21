@@ -18,6 +18,8 @@ dependencies:
     path: pkgs/stockfish_hce
   stockfish_nnue:
     path: pkgs/stockfish_nnue
+  fairy_stockfish:
+    path: pkgs/fairy_stockfish
 
 dev_dependencies:
   flutter_test:

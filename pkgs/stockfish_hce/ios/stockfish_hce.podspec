@@ -19,6 +19,9 @@ Stockfish using Hand Crafted Evaluation
 
   s.source = { :git => pubspec['repository'], :tag => s.version.to_s }
   s.source_files = 'Classes/**/*', 'Stockfish11/src/**/*'
+  s.exclude_files = [
+    'Stockfish11/src/Makefile',
+  ]
   s.dependency 'Flutter'
   s.platform = :ios, '12.0'
 
