@@ -4,6 +4,7 @@ environment:
   sdk: ^3.6.0
 workspace:
   - pkgs/multistockfish
+  - pkgs/multistockfish/example
   - pkgs/multistockfish_hce
   - pkgs/multistockfish_nnue
   - pkgs/multistockfish_fairy
