@@ -1,0 +1,23 @@
+name: multistockfish_hce
+description: "Stockfish using Hand Crafted Evaluation"
+version: 0.1.0
+repository: https://github.com/lichess-org/dart-multistockfish.git
+homepage: https://github.com/lichess-org/dart-multistockfish.git
+
+resolution: workspace
+
+environment:
+  sdk: ^3.8.0-171.0.dev
+  flutter: '>=3.3.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        ffiPlugin: true
+      ios:
+        ffiPlugin: true
