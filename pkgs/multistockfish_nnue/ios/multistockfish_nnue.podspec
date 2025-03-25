@@ -9,10 +9,7 @@ pubspec = YAML.load(File.read(File.join(__dir__, '../pubspec.yaml')))
 Pod::Spec.new do |s|
   s.name             = 'multistockfish_nnue'
   s.version          = pubspec['version']
-  s.summary          = 'Stockfish using NNUE Evaluation.'
-  s.description      = <<-DESC
-Stockfish using NNUE Evaluation.
-                       DESC
+  s.summary          = pubspec['description']
   s.homepage         = pubspec['homepage']
   s.license          = { :file => '../LICENSE', :type => 'GPL' }
   s.author           = { 'lichess.org' => 'contact@lichess.org' }
