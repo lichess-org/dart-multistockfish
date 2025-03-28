@@ -26,6 +26,11 @@ class Stockfish {
     /// The flavor of Stockfish to use.
     StockfishFlavor flavor = StockfishFlavor.chess,
 
+    /// The variant of chess to use. (Only for [StockfishFlavor.variant]).
+    ///
+    /// Example: '3check', 'crazyhouse', 'atomic', 'kingofthehill', 'antichess', 'horde', 'racingkings'.
+    String? variant,
+
     /// Full path to the small net file for NNUE evaluation.
     String? smallNetPath,
 
@@ -38,6 +43,7 @@ class Stockfish {
 
     _instance = Stockfish._(
       flavor,
+      variant: variant,
       smallNetPath: smallNetPath,
       bigNetPath: bigNetPath,
     );
@@ -48,6 +54,9 @@ class Stockfish {
 
   /// The flavor of Stockfish.
   final StockfishFlavor flavor;
+
+  /// The variant of chess. (Only for [StockfishFlavor.variant]).
+  final String? variant;
 
   /// Full path to the small net file for NNUE evaluation.
   final String? smallNetPath;
@@ -65,7 +74,7 @@ class Stockfish {
   late StreamSubscription _mainSubscription;
   late StreamSubscription _stdoutSubscription;
 
-  Stockfish._(this.flavor, {this.smallNetPath, this.bigNetPath}) {
+  Stockfish._(this.flavor, {this.variant, this.smallNetPath, this.bigNetPath}) {
     _mainSubscription = _mainPort.listen(
       (message) => _cleanUp(message is int ? message : 1),
     );
@@ -98,6 +107,10 @@ class Stockfish {
               (_) {
                 // The engine is ready.
                 _state._setValue(StockfishState.ready);
+
+                if (flavor == StockfishFlavor.variant && variant != null) {
+                  stdin = 'setoption name UCI_Variant value $variant';
+                }
 
                 if (bigNetPath != null && smallNetPath != null) {
                   stdin = 'setoption name EvalFile value $bigNetPath';
