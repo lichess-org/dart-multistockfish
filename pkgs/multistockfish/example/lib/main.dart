@@ -28,10 +28,22 @@ class _AppState extends State<MyApp> {
   StockfishFlavor flavor = StockfishFlavor.chess;
   late Stockfish stockfish;
 
+  String? variant = '3check';
+
+  static const _variants = [
+    '3check',
+    'crazyhouse',
+    'atomic',
+    'kingofthehill',
+    'antichess',
+    'horde',
+    'racingkings',
+  ];
+
   @override
   void initState() {
     super.initState();
-    stockfish = Stockfish(flavor: flavor);
+    stockfish = Stockfish(flavor: flavor, variant: variant);
   }
 
   @override
@@ -52,7 +64,10 @@ class _AppState extends State<MyApp> {
                             ? (value) {
                               setState(() {
                                 flavor = value!;
-                                stockfish = Stockfish(flavor: flavor);
+                                stockfish = Stockfish(
+                                  flavor: flavor,
+                                  variant: variant,
+                                );
                               });
                             }
                             : null,
@@ -69,6 +84,38 @@ class _AppState extends State<MyApp> {
                 },
               ),
             ),
+            if (flavor == StockfishFlavor.variant)
+              AnimatedBuilder(
+                animation: stockfish.state,
+                builder: (_, _) {
+                  return Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: DropdownButton<String>(
+                      onChanged:
+                          stockfish.state.value == StockfishState.disposed
+                              ? (value) {
+                                setState(() {
+                                  variant = value!;
+                                  stockfish = Stockfish(
+                                    flavor: flavor,
+                                    variant: variant,
+                                  );
+                                });
+                              }
+                              : null,
+                      value: variant,
+                      items: _variants
+                          .map(
+                            (variant) => DropdownMenuItem(
+                              value: variant,
+                              child: Text(variant),
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
+                  );
+                },
+              ),
             Padding(
               padding: const EdgeInsets.all(8.0),
               child: AnimatedBuilder(
@@ -89,7 +136,10 @@ class _AppState extends State<MyApp> {
                       onPressed:
                           stockfish.state.value == StockfishState.disposed
                               ? () {
-                                final newInstance = Stockfish(flavor: flavor);
+                                final newInstance = Stockfish(
+                                  flavor: flavor,
+                                  variant: variant,
+                                );
                                 setState(() => stockfish = newInstance);
                               }
                               : null,
