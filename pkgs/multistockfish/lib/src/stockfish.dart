@@ -22,11 +22,9 @@ class Stockfish {
   ///
   /// Throws a [StateError] if an active instance is being used.
   /// Owner must [dispose] it before a new instance can be created.
-  ///
-  /// When [flavor] is [StockfishFlavor.nnue], [smallNetPath] and [bigNetPath] must be provided.
-  factory Stockfish(
+  factory Stockfish({
     /// The flavor of Stockfish to use.
-    StockfishFlavor flavor, {
+    StockfishFlavor flavor = StockfishFlavor.chess,
 
     /// Full path to the small net file for NNUE evaluation.
     String? smallNetPath,
@@ -34,12 +32,6 @@ class Stockfish {
     /// Full path to the big net file for NNUE evaluation.
     String? bigNetPath,
   }) {
-    assert(
-      flavor != StockfishFlavor.nnue ||
-          (smallNetPath != null && bigNetPath != null),
-      'NNUE evaluation requires smallNetPath and bigNetPath',
-    );
-
     if (_instance != null) {
       throw StateError('Multiple instances are not supported.');
     }
@@ -107,7 +99,7 @@ class Stockfish {
                 // The engine is ready.
                 _state._setValue(StockfishState.ready);
 
-                if (flavor == StockfishFlavor.nnue) {
+                if (bigNetPath != null && smallNetPath != null) {
                   stdin = 'setoption name EvalFile value $bigNetPath';
                   stdin = 'setoption name EvalFileSmall value $smallNetPath';
                 }
@@ -172,23 +164,17 @@ DynamicLibrary _openDynamicLibrary(String libName) {
   throw UnsupportedError('Unknown platform: ${Platform.operatingSystem}');
 }
 
-StockfishBindings? _hceBindings;
 StockfishBindings? _nnueBindings;
 StockfishBindings? _fairyBindings;
 
 StockfishBindings _getBindings(StockfishFlavor flavor) {
   switch (flavor) {
-    case StockfishFlavor.hce:
-      _hceBindings ??= StockfishBindings(
-        _openDynamicLibrary('multistockfish_hce'),
-      );
-      return _hceBindings!;
-    case StockfishFlavor.nnue:
+    case StockfishFlavor.chess:
       _nnueBindings ??= StockfishBindings(
-        _openDynamicLibrary('multistockfish_nnue'),
+        _openDynamicLibrary('multistockfish_chess'),
       );
       return _nnueBindings!;
-    case StockfishFlavor.fairy:
+    case StockfishFlavor.variant:
       _fairyBindings ??= StockfishBindings(
         _openDynamicLibrary('multistockfish_fairy'),
       );

@@ -1,11 +1,8 @@
 /// The flavor of Stockfish to use.
 enum StockfishFlavor {
-  /// Stockfish with Hand Crafted Evaluation
-  hce,
+  /// Regular Stockfish engine for chess and chess960
+  chess,
 
-  /// Stockfish with NNUE Evaluation
-  nnue,
-
-  /// Multi-Variant Stockfish
-  fairy,
+  /// Multi-Variant Stockfish for other chess variants
+  variant,
 }

@@ -1,6 +1,6 @@
 // The Android Gradle Plugin builds the native code with the Android NDK.
 
-group = "org.lichess.multistockfish_nnue"
+group = "org.lichess.multistockfish_chess"
 version = "1.0"
 
 buildscript {
@@ -25,7 +25,7 @@ rootProject.allprojects {
 apply plugin: "com.android.library"
 
 android {
-    namespace = "org.lichess.multistockfish_nnue"
+    namespace = "org.lichess.multistockfish_chess"
 
     // Bumping the plugin compileSdk version requires all clients of this plugin
     // to bump the version in their app.
@@ -40,7 +40,7 @@ android {
     // Invoke the shared CMake build with the Android Gradle Plugin.
     externalNativeBuild {
         cmake {
-            path = "CMakeLists.txt"
+            path = "../src/CMakeLists.txt"
         }
     }
 

@@ -5,6 +5,5 @@ environment:
 workspace:
   - pkgs/multistockfish
   - pkgs/multistockfish/example
-  - pkgs/multistockfish_hce
-  - pkgs/multistockfish_nnue
+  - pkgs/multistockfish_chess
   - pkgs/multistockfish_fairy

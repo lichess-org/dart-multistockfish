@@ -2,14 +2,16 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include "../Stockfish17/src/bitboard.h"
-#include "../Stockfish17/src/misc.h"
-#include "../Stockfish17/src/position.h"
-#include "../Stockfish17/src/types.h"
-#include "../Stockfish17/src/uci.h"
-#include "../Stockfish17/src/tune.h"
+#include "Stockfish11/src/bitboard.h"
+#include "Stockfish11/src/position.h"
+#include "Stockfish11/src/search.h"
+#include "Stockfish11/src/thread.h"
+#include "Stockfish11/src/tt.h"
+#include "Stockfish11/src/uci.h"
+#include "Stockfish11/src/endgame.h"
+#include "Stockfish11/src/syzygy/tbprobe.h"
 
-#include "multistockfish_nnue.h"
+#include "stockfish_hce.h"
 
 // https://jineshkj.wordpress.com/2006/12/22/how-to-capture-stdin-stdout-and-stderr-of-child-program/
 #define NUM_PIPES 2
@@ -22,22 +24,28 @@
 #define CHILD_READ_FD (pipes[PARENT_WRITE_PIPE][READ_FD])
 #define CHILD_WRITE_FD (pipes[PARENT_READ_PIPE][WRITE_FD])
 
-namespace StockfishNNUE {
-  using namespace Stockfish;
+namespace PSQT {
+  void init();
+}
 
+namespace StockfishHCE
+{
   int main(int argc, char* argv[]) {
 
     std::cout << engine_info() << std::endl;
 
+    UCI::init(Options);
+    PSQT::init();
     Bitboards::init();
     Position::init();
+    Bitbases::init();
+    Endgames::init();
+    Threads.set(Options["Threads"]);
+    Search::clear(); // After threads are up
 
-    UCIEngine uci(argc, argv);
+    UCI::loop(argc, argv);
 
-    Tune::init(uci.engine_options());
-
-    uci.loop();
-
+    Threads.set(0);
     return 0;
   }
 }
@@ -61,7 +69,7 @@ int stockfish_main()
 
   int argc = 1;
   char *argv[] = {""};
-  int exitCode = StockfishNNUE::main(argc, argv);
+  int exitCode = StockfishHCE::main(argc, argv);
 
   std::cout << QUITOK << std::flush;
 

@@ -1,13 +1,13 @@
 #
 # To learn more about a Podspec see http://guides.cocoapods.org/syntax/podspec.html.
-# Run `pod lib lint multistockfish_nnue.podspec` to validate before publishing.
+# Run `pod lib lint multistockfish_chess.podspec` to validate before publishing.
 #
 require 'yaml'
 
 pubspec = YAML.load(File.read(File.join(__dir__, '../pubspec.yaml')))
 
 Pod::Spec.new do |s|
-  s.name             = 'multistockfish_nnue'
+  s.name             = 'multistockfish_chess'
   s.version          = pubspec['version']
   s.summary          = pubspec['description']
   s.homepage         = pubspec['homepage']
@@ -27,13 +27,26 @@ Pod::Spec.new do |s|
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }
   s.swift_version = '5.0'
 
+  s.script_phase = [
+    {
+      :execution_position => :before_compile,
+      :name => 'Download nnue',
+      :script => "[ -e 'nn-1111cefa1111.nnue' ] || curl --location --remote-name 'https://tests.stockfishchess.org/api/nn/nn-1111cefa1111.nnue'"
+    },
+    {
+      :execution_position => :before_compile,
+      :name => 'Download small nnue',
+      :script => "[ -e 'nn-37f18f62d772.nnue' ] || curl --location --remote-name 'https://tests.stockfishchess.org/api/nn/nn-37f18f62d772.nnue'"
+    },
+  ]
+
   # Additional compiler configuration required for Stockfish
   s.library = 'c++'
   s.xcconfig = {
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
     'CLANG_CXX_LIBRARY' => 'libc++',
-    'OTHER_CPLUSPLUSFLAGS' => '-std=c++17 -mdynamic-no-pic -DNNUE_EMBEDDING_OFF -DUSE_PTHREADS -DIS_64BIT -DUSE_POPCNT',
-    'OTHER_LDFLAGS' => '-std=c++17 -mdynamic-no-pic -DNNUE_EMBEDDING_OFF -DUSE_PTHREADS -DIS_64BIT -DUSE_POPCNT',
+    'OTHER_CPLUSPLUSFLAGS' => '-std=c++17 -mdynamic-no-pic -DUSE_PTHREADS -DIS_64BIT -DUSE_POPCNT',
+    'OTHER_LDFLAGS' => '-std=c++17 -mdynamic-no-pic -DUSE_PTHREADS -DIS_64BIT -DUSE_POPCNT',
     'OTHER_CPLUSPLUSFLAGS[config=Profile]' => '$(inherited) -fno-exceptions -DNDEBUG -funroll-loops -O3 -DUSE_NEON=8 -flto=full',
     'OTHER_LDFLAGS[config=Profile]' => '$(inherited) -fno-exceptions -DNDEBUG -funroll-loops -O3 -DUSE_NEON=8 -flto=full',
     'OTHER_CPLUSPLUSFLAGS[config=Release]' => '$(inherited) -fno-exceptions -DNDEBUG -funroll-loops -O3 -DUSE_NEON=8 -flto=full',

@@ -1,5 +1,5 @@
-name: multistockfish_nnue
-description: "Stockfish C++ library using NNUE Evaluation"
+name: multistockfish_chess
+description: "Stockfish C++ library for chess and chess 960."
 version: 0.1.0
 repository: https://github.com/lichess-org/dart-multistockfish.git
 homepage: https://github.com/lichess-org/dart-multistockfish.git
