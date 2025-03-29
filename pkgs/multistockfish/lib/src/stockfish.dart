@@ -189,7 +189,7 @@ StockfishBindings _getBindings(StockfishFlavor flavor) {
       return _nnueBindings!;
     case StockfishFlavor.variant:
       _fairyBindings ??= StockfishBindings(
-        _openDynamicLibrary('multistockfish_fairy'),
+        _openDynamicLibrary('multistockfish_variant'),
       );
       return _fairyBindings!;
   }

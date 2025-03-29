@@ -1,13 +1,13 @@
 #
 # To learn more about a Podspec see http://guides.cocoapods.org/syntax/podspec.html.
-# Run `pod lib lint multistockfish_fairy.podspec` to validate before publishing.
+# Run `pod lib lint multistockfish_variant.podspec` to validate before publishing.
 #
 require 'yaml'
 
 pubspec = YAML.load(File.read(File.join(__dir__, '../pubspec.yaml')))
 
 Pod::Spec.new do |s|
-  s.name             = 'multistockfish_fairy'
+  s.name             = 'multistockfish_variant'
   s.version          = pubspec['version']
   s.summary          = pubspec['description']
   s.homepage         = pubspec['homepage']

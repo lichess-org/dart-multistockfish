@@ -15,7 +15,7 @@
 #include "../Fairy-Stockfish-2b5d9512/src/variant.h"
 #include "../Fairy-Stockfish-2b5d9512/src/xboard.h"
 
-#include "multistockfish_fairy.h"
+#include "stockfish_variant.h"
 
 // https://jineshkj.wordpress.com/2006/12/22/how-to-capture-stdin-stdout-and-stderr-of-child-program/
 #define NUM_PIPES 2

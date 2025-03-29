@@ -1,4 +1,4 @@
-name: multistockfish_fairy
+name: multistockfish_variant
 description: "Multi-variant Stockfish C++ library"
 version: 0.1.0
 repository: https://github.com/lichess-org/dart-multistockfish.git
