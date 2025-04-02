@@ -163,8 +163,8 @@ class _AppState extends State<MyApp> {
               children: [
                     'd',
                     'isready',
-                    'ucinewgame',
-                    'position startpos',
+                    'bench',
+                    'speedtest',
                     'go movetime 3000',
                     'stop',
                     'quit',
