@@ -14,11 +14,11 @@ Pod::Spec.new do |s|
   s.license          = { :file => '../LICENSE', :type => 'GPL' }
   s.author           = { 'lichess.org' => 'contact@lichess.org' }
   s.source = { :git => pubspec['repository'], :tag => s.version.to_s }
-  s.source_files = 'Classes/**/*', 'Stockfish17/src/**/*'
+  s.source_files = 'Classes/**/*', 'Stockfish/src/**/*'
   s.exclude_files = [
-    'Stockfish17/src/Makefile',
-    'Stockfish17/src/main.cpp',
-    'Stockfish17/src/incbin/UNLICENCE',
+    'Stockfish/src/Makefile',
+    'Stockfish/src/main.cpp',
+    'Stockfish/src/incbin/UNLICENCE',
   ]
   s.dependency 'Flutter'
   s.platform = :ios, '12.0'
@@ -31,7 +31,7 @@ Pod::Spec.new do |s|
     {
       :execution_position => :before_compile,
       :name => 'Download nnue',
-      :script => "[ -e 'nn-1111cefa1111.nnue' ] || curl --location --remote-name 'https://tests.stockfishchess.org/api/nn/nn-1111cefa1111.nnue'"
+      :script => "[ -e 'nn-1c0000000000.nnue' ] || curl --location --remote-name 'https://tests.stockfishchess.org/api/nn/nn-1c0000000000.nnue'"
     },
     {
       :execution_position => :before_compile,
