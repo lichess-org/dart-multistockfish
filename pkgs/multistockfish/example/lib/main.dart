@@ -164,7 +164,6 @@ class _AppState extends State<MyApp> {
                     'd',
                     'isready',
                     'bench',
-                    'speedtest',
                     'go movetime 3000',
                     'stop',
                     'quit',
