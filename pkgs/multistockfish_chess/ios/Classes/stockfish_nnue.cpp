@@ -59,6 +59,10 @@ int stockfish_main()
   dup2(CHILD_READ_FD, STDIN_FILENO);
   dup2(CHILD_WRITE_FD, STDOUT_FILENO);
 
+  // close unused pipe fds
+  close(CHILD_READ_FD);
+  close(CHILD_WRITE_FD);
+
   int argc = 1;
   char *argv[] = {""};
   int exitCode = StockfishNNUE::main(argc, argv);
