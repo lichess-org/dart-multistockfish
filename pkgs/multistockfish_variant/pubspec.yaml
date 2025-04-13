@@ -7,7 +7,7 @@ homepage: https://github.com/lichess-org/dart-multistockfish.git
 resolution: workspace
 
 environment:
-  sdk: ^3.8.0-171.0.dev
+  sdk: ^3.7.0
   flutter: '>=3.3.0'
 
 dependencies:
