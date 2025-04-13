@@ -44,49 +44,27 @@ class _OutputState extends State<OutputWidget> {
 
   void _subscribe() {
     subscription = widget.stdout.listen((line) {
-      if (line.startsWith('info')) {
-        if (items.isNotEmpty && items.first.infoCount != null) {
-          items.first.infoCount?.value++;
-        } else {
-          items.insert(0, _OutputItem.info());
-        }
-      } else {
-        items.insert(0, _OutputItem.line(line));
-      }
+      items.insert(0, _OutputItem.line(line));
       setState(() {});
     });
   }
 
   Widget _buildItem(BuildContext context, int index) {
     final item = items[index];
-    final infoCount = item.infoCount;
-    if (infoCount != null) {
-      return AnimatedBuilder(
-        animation: infoCount,
-        builder: (_, __) => _text(item, 'info (${infoCount.value})'),
-      );
-    }
-
     final line = item.line;
     if (line != null) {
-      return _text(item, line);
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        child: Text(line),
+      );
     }
 
     return const SizedBox.shrink();
   }
-
-  Widget _text(_OutputItem item, String data) => Padding(
-    key: ObjectKey(item),
-    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-    child: Text(data, maxLines: 1, overflow: TextOverflow.ellipsis),
-  );
 }
 
 class _OutputItem {
-  final ValueNotifier<int>? infoCount;
   final String? line;
 
-  _OutputItem.info() : infoCount = ValueNotifier(1), line = null;
-
-  _OutputItem.line(this.line) : infoCount = null;
+  _OutputItem.line(this.line);
 }
