@@ -5,7 +5,7 @@ Multiple flavors of Stockfish Engine.
 This plugin provides the following Stockfish engines:
 
 * [Official Stockfish](https://stockfishchess.org) engine for chess and chess 960
-    * Stockfish 17 is packaged for armv8
+    * Stockfish 17.1 is packaged for armv8
     * Stockfish 11 (handcrafted evaluation) is packaged for armv7
 * [Fairy-Stockfish](https://fairy-stockfish.github.io) for chess variants
 
