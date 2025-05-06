@@ -5,8 +5,6 @@ Multiple flavors of Stockfish Engine.
 This plugin provides the following Stockfish engines:
 
 * [Official Stockfish](https://stockfishchess.org) engine for chess and chess 960
-    * Stockfish 17.1 is packaged for armv8
-    * Stockfish 11 (handcrafted evaluation) is packaged for armv7
 * [Fairy-Stockfish](https://fairy-stockfish.github.io) for chess variants
 
 ## Usage
@@ -16,6 +14,10 @@ This plugin provides the following Stockfish engines:
 > [!WARNING]
 > Only one instance can be created at a time. The `Stockfish()` constructor
 > will throw a StateError if called while another instance is running.
+
+> [!NOTE]
+> When using the `StockfishFlavor.chess` flavor, you need to download the `.nnue` files before
+> starting an evaluation, since it is not embedded in the binary.
 
 ```dart
 import 'package:multistockfish/multistockfish.dart';
