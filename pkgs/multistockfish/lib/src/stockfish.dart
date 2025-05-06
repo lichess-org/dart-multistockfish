@@ -22,9 +22,11 @@ class Stockfish {
   ///
   /// Throws a [StateError] if an active instance is being used.
   /// Owner must [dispose] it before a new instance can be created.
+  ///
+  /// When [flavor] is [StockfishFlavor.chess], [smallNetPath] and [bigNetPath] must be provided.
   factory Stockfish({
     /// The flavor of Stockfish to use.
-    StockfishFlavor flavor = StockfishFlavor.chess,
+    StockfishFlavor flavor = StockfishFlavor.variant,
 
     /// The variant of chess to use. (Only for [StockfishFlavor.variant]).
     ///
@@ -37,6 +39,12 @@ class Stockfish {
     /// Full path to the big net file for NNUE evaluation.
     String? bigNetPath,
   }) {
+    assert(
+      flavor != StockfishFlavor.chess ||
+          (smallNetPath != null && bigNetPath != null),
+      'NNUE evaluation requires smallNetPath and bigNetPath',
+    );
+
     if (_instance != null) {
       throw StateError('Multiple instances are not supported.');
     }
@@ -49,6 +57,9 @@ class Stockfish {
     );
     return _instance!;
   }
+
+  static const defaultBigNetFile = 'nn-1111cefa1111.nnue';
+  static const defaultSmallNetFile = 'nn-37f18f62d772.nnue';
 
   static Stockfish? _instance;
 

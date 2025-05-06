@@ -3,26 +3,16 @@
 # the plugin to fail to compile for some customers of the plugin.
 cmake_minimum_required(VERSION 3.10)
 
-project(multistockfish_chess_library VERSION 0.1.0 LANGUAGES CXX)
+project(multistockfish_chess_library VERSION 0.2.0 LANGUAGES CXX)
 
 file(GLOB_RECURSE sf17Paths "../ios/Stockfish/src/*.cpp")
-file(GLOB_RECURSE sf11Paths "Stockfish11/src/*.cpp")
 
-if(ANDROID_ABI STREQUAL arm64-v8a)
-  add_library(
-    multistockfish_chess
-    SHARED
-    ../ios/Classes/stockfish_nnue.cpp
-    ${sf17Paths}
-  )
-else()
-  add_library(
-    multistockfish_chess
-    SHARED
-    stockfish_hce.cpp
-    ${sf11Paths}
-  )
-endif()
+add_library(
+  multistockfish_chess
+  SHARED
+  ../ios/Classes/stockfish_nnue.cpp
+  ${sf17Paths}
+)
 
 set_target_properties(multistockfish_chess PROPERTIES
   PUBLIC_HEADER multistockfish_chess.h
@@ -36,18 +26,16 @@ target_link_options(multistockfish_chess PRIVATE "-Wl,-z,max-page-size=16384")
 
 if(ANDROID_ABI STREQUAL arm64-v8a)
   if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_options(multistockfish_chess PRIVATE -std=c++17 -DUSE_PTHREADS -DIS_64BIT -DUSE_POPCNT -DUSE_NEON=8)
+    target_compile_options(multistockfish_chess PRIVATE -std=c++17 -DNNUE_EMBEDDING_OFF -DUSE_PTHREADS -DIS_64BIT -DUSE_POPCNT -DUSE_NEON=8)
   else()
-    target_compile_options(multistockfish_chess PRIVATE -std=c++17 -fno-exceptions -DUSE_PTHREADS -DNDEBUG -funroll-loops -O3 -DIS_64BIT -DUSE_POPCNT -DUSE_NEON=8)
+    target_compile_options(multistockfish_chess PRIVATE -std=c++17 -DNNUE_EMBEDDING_OFF -fno-exceptions -DUSE_PTHREADS -DNDEBUG -funroll-loops -O3 -DIS_64BIT -DUSE_POPCNT -DUSE_NEON=8)
   endif()
-  file(DOWNLOAD https://tests.stockfishchess.org/api/nn/nn-1c0000000000.nnue ${CMAKE_BINARY_DIR}/nn-1c0000000000.nnue)
-  file(DOWNLOAD https://tests.stockfishchess.org/api/nn/nn-37f18f62d772.nnue ${CMAKE_BINARY_DIR}/nn-37f18f62d772.nnue)
 
 else()
 
   if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_options(multistockfish_chess PRIVATE -std=c++11)
+    target_compile_options(multistockfish_chess PRIVATE -std=c++17 -DNNUE_EMBEDDING_OFF -DUSE_PTHREADS)
   else()
-    target_compile_options(multistockfish_chess PRIVATE -std=c++11 -fno-exceptions -DNDEBUG -O3)
+    target_compile_options(multistockfish_chess PRIVATE -std=c++17 -DNNUE_EMBEDDING_OFF -DUSE_PTHREADS -fno-exceptions -DNDEBUG -O3)
   endif()
 endif()
