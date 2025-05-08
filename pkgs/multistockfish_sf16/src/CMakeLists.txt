@@ -3,7 +3,7 @@
 # the plugin to fail to compile for some customers of the plugin.
 cmake_minimum_required(VERSION 3.10)
 
-project(multistockfish_sf16_library VERSION 0.2.0 LANGUAGES CXX)
+project(multistockfish_sf16_library VERSION 0.1.0 LANGUAGES CXX)
 
 file(GLOB_RECURSE sf16Paths "../ios/Stockfish16/src/*.cpp")
 
