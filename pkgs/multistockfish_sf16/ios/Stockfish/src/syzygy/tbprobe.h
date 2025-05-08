@@ -23,7 +23,7 @@
 
 #include "../search.h"
 
-namespace Stockfish::Tablebases {
+namespace Stockfish16::Tablebases {
 
 enum WDLScore {
     WDLLoss        = -2, // Loss
@@ -71,6 +71,6 @@ inline std::ostream& operator<<(std::ostream& os, const ProbeState v) {
     return os;
 }
 
-} // namespace Stockfish::Tablebases
+} // namespace Stockfish16::Tablebases
 
 #endif

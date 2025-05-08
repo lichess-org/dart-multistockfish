@@ -27,7 +27,7 @@
 #include <cstring> // std::memset()
 #include <utility> // std::pair
 
-namespace Stockfish::Eval::NNUE {
+namespace Stockfish16::Eval::NNUE {
 
   using BiasType       = std::int16_t;
   using WeightType     = std::int16_t;
@@ -669,6 +669,6 @@ namespace Stockfish::Eval::NNUE {
     alignas(CacheLineSize) PSQTWeightType psqtWeights[InputDimensions * PSQTBuckets];
   };
 
-}  // namespace Stockfish::Eval::NNUE
+}  // namespace Stockfish16::Eval::NNUE
 
 #endif // #ifndef NNUE_FEATURE_TRANSFORMER_H_INCLUDED

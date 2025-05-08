@@ -28,7 +28,7 @@
 #include "position.h"
 #include "types.h"
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 /// EndgameCode lists all supported endgame functions by corresponding codes
 
@@ -121,6 +121,6 @@ namespace Endgames {
   }
 }
 
-} // namespace Stockfish
+} // namespace Stockfish16
 
 #endif // #ifndef ENDGAME_H_INCLUDED

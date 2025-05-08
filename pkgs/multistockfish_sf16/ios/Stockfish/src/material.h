@@ -24,7 +24,7 @@
 #include "position.h"
 #include "types.h"
 
-namespace Stockfish::Material {
+namespace Stockfish16::Material {
 
 /// Material::Entry contains various information about a material configuration.
 /// It contains a material imbalance evaluation, a function pointer to a special
@@ -66,6 +66,6 @@ using Table = HashTable<Entry, 8192>;
 
 Entry* probe(const Position& pos);
 
-} // namespace Stockfish::Material
+} // namespace Stockfish16::Material
 
 #endif // #ifndef MATERIAL_H_INCLUDED

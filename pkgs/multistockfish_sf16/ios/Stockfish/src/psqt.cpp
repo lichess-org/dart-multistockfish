@@ -24,7 +24,7 @@
 #include "bitboard.h"
 #include "types.h"
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 namespace
 {
@@ -128,4 +128,4 @@ void init() {
 
 } // namespace PSQT
 
-} // namespace Stockfish
+} // namespace Stockfish16

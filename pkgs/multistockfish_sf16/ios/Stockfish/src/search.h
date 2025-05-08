@@ -25,7 +25,7 @@
 #include "movepick.h"
 #include "types.h"
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 class Position;
 
@@ -111,6 +111,6 @@ void clear();
 
 } // namespace Search
 
-} // namespace Stockfish
+} // namespace Stockfish16
 
 #endif // #ifndef SEARCH_H_INCLUDED

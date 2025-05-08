@@ -32,7 +32,7 @@
 #include "search.h"
 #include "thread_win32_osx.h"
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 /// Thread class keeps together all the thread-related stuff. We use
 /// per-thread pawn and material hash tables so that once we get a
@@ -136,6 +136,6 @@ private:
 
 extern ThreadPool Threads;
 
-} // namespace Stockfish
+} // namespace Stockfish16
 
 #endif // #ifndef THREAD_H_INCLUDED

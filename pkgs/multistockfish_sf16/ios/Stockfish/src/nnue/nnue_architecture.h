@@ -34,7 +34,7 @@
 
 #include "../misc.h"
 
-namespace Stockfish::Eval::NNUE {
+namespace Stockfish16::Eval::NNUE {
 
 // Input features used in evaluation function
 using FeatureSet = Features::HalfKAv2_hm;
@@ -132,6 +132,6 @@ struct Network
   }
 };
 
-}  // namespace Stockfish::Eval::NNUE
+}  // namespace Stockfish16::Eval::NNUE
 
 #endif // #ifndef NNUE_ARCHITECTURE_H_INCLUDED

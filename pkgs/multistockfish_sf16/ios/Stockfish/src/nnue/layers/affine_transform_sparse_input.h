@@ -33,7 +33,7 @@
   This file contains the definition for a fully connected layer (aka affine transform) with block sparse input.
 */
 
-namespace Stockfish::Eval::NNUE::Layers {
+namespace Stockfish16::Eval::NNUE::Layers {
 #if defined(__GNUC__)  // GCC, Clang, ICC
 
   static inline IndexType lsb_(std::uint32_t b) {
@@ -281,6 +281,6 @@ namespace Stockfish::Eval::NNUE::Layers {
     alignas(CacheLineSize) WeightType weights[OutputDimensions * PaddedInputDimensions];
   };
 
-}  // namespace Stockfish::Eval::NNUE::Layers
+}  // namespace Stockfish16::Eval::NNUE::Layers
 
 #endif // #ifndef NNUE_LAYERS_AFFINE_TRANSFORM_SPARSE_INPUT_H_INCLUDED

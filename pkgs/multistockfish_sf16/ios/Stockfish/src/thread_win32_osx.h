@@ -31,7 +31,7 @@
 
 #include <pthread.h>
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 static const size_t TH_STACK_SIZE = 8 * 1024 * 1024;
 
@@ -59,15 +59,15 @@ public:
   void join() { pthread_join(thread, nullptr); }
 };
 
-} // namespace Stockfish
+} // namespace Stockfish16
 
 #else // Default case: use STL classes
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 using NativeThread = std::thread;
 
-} // namespace Stockfish
+} // namespace Stockfish16
 
 #endif
 

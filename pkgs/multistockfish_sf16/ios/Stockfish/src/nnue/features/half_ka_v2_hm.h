@@ -26,11 +26,11 @@
 #include "../../evaluate.h"
 #include "../../misc.h"
 
-namespace Stockfish {
+namespace Stockfish16 {
   struct StateInfo;
 }
 
-namespace Stockfish::Eval::NNUE::Features {
+namespace Stockfish16::Eval::NNUE::Features {
 
   // Feature HalfKAv2_hm: Combination of the position of own king
   // and the position of pieces. Position mirrored such that king always on e..h files.
@@ -147,6 +147,6 @@ namespace Stockfish::Eval::NNUE::Features {
     static bool requires_refresh(const StateInfo* st, Color perspective);
   };
 
-}  // namespace Stockfish::Eval::NNUE::Features
+}  // namespace Stockfish16::Eval::NNUE::Features
 
 #endif // #ifndef NNUE_FEATURES_HALF_KA_V2_HM_H_INCLUDED

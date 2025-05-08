@@ -25,8 +25,8 @@
 #define CHILD_READ_FD (pipes[PARENT_WRITE_PIPE][READ_FD])
 #define CHILD_WRITE_FD (pipes[PARENT_READ_PIPE][WRITE_FD])
 
-namespace Stockfish16 {
-  using namespace Stockfish;
+namespace Stockfish16Init {
+  using namespace Stockfish16;
 
   int main(int argc, char* argv[]) {
     std::cout << engine_info() << std::endl;
@@ -73,7 +73,7 @@ int stockfish_main()
 
   int argc = 1;
   char *argv[] = {""};
-  int exitCode = Stockfish16::main(argc, argv);
+  int exitCode = Stockfish16Init::main(argc, argv);
 
   std::cout << QUITOK << std::flush;
 

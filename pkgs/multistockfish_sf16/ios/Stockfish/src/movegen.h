@@ -23,7 +23,7 @@
 
 #include "types.h"
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 class Position;
 
@@ -72,6 +72,6 @@ private:
   ExtMove moveList[MAX_MOVES], *last;
 };
 
-} // namespace Stockfish
+} // namespace Stockfish16
 
 #endif // #ifndef MOVEGEN_H_INCLUDED

@@ -45,7 +45,7 @@
 #include <arm_neon.h>
 #endif
 
-namespace Stockfish::Eval::NNUE {
+namespace Stockfish16::Eval::NNUE {
 
   // Version of the evaluation file
   constexpr std::uint32_t Version = 0x7AF32F20u;
@@ -236,6 +236,6 @@ namespace Stockfish::Eval::NNUE {
       flush();
   }
 
-}  // namespace Stockfish::Eval::NNUE
+}  // namespace Stockfish16::Eval::NNUE
 
 #endif // #ifndef NNUE_COMMON_H_INCLUDED

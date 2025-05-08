@@ -26,7 +26,7 @@
 #include "tt.h"
 #include "uci.h"
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 TranspositionTable TT; // Our global transposition table
 
@@ -159,4 +159,4 @@ int TranspositionTable::hashfull() const {
   return cnt / ClusterSize;
 }
 
-} // namespace Stockfish
+} // namespace Stockfish16

@@ -52,7 +52,7 @@
     - accumulation happens directly to int32s
 */
 
-namespace Stockfish::Eval::NNUE::Layers {
+namespace Stockfish16::Eval::NNUE::Layers {
 
 // Fallback implementation for older/other architectures.
 // Identical for both approaches. Requires the input to be padded to at least 16 values.
@@ -558,6 +558,6 @@ namespace Stockfish::Eval::NNUE::Layers {
     alignas(CacheLineSize) WeightType weights[OutputDimensions * PaddedInputDimensions];
   };
 
-}  // namespace Stockfish::Eval::NNUE::Layers
+}  // namespace Stockfish16::Eval::NNUE::Layers
 
 #endif // #ifndef NNUE_LAYERS_AFFINE_TRANSFORM_H_INCLUDED

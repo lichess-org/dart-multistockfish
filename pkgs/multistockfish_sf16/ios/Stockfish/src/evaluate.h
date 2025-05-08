@@ -24,7 +24,7 @@
 
 #include "types.h"
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 class Position;
 
@@ -50,6 +50,6 @@ namespace Eval {
 
 } // namespace Eval
 
-} // namespace Stockfish
+} // namespace Stockfish16
 
 #endif // #ifndef EVALUATE_H_INCLUDED

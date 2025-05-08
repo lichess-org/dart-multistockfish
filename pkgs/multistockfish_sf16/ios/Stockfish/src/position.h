@@ -31,7 +31,7 @@
 
 #include "nnue/nnue_accumulator.h"
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 /// StateInfo struct stores information needed to restore a Position object to
 /// its previous state when we retract a move. Whenever a move is made on the
@@ -445,6 +445,6 @@ inline StateInfo* Position::state() const {
   return st;
 }
 
-} // namespace Stockfish
+} // namespace Stockfish16
 
 #endif // #ifndef POSITION_H_INCLUDED

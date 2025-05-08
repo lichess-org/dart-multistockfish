@@ -28,7 +28,7 @@
 #include "tt.h"
 #include "uci.h"
 
-using namespace Stockfish;
+using namespace Stockfish16;
 
 int main(int argc, char* argv[]) {
 

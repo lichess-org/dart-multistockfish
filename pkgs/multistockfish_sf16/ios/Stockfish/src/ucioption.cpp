@@ -31,7 +31,7 @@
 
 using std::string;
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 UCI::OptionsMap Options; // Global object
 
@@ -191,4 +191,4 @@ Option& Option::operator=(const string& v) {
 
 } // namespace UCI
 
-} // namespace Stockfish
+} // namespace Stockfish16

@@ -25,7 +25,7 @@
 
 #include <memory>
 
-namespace Stockfish::Eval::NNUE {
+namespace Stockfish16::Eval::NNUE {
 
   // Hash value of evaluation function structure
   constexpr std::uint32_t HashValue =
@@ -63,6 +63,6 @@ namespace Stockfish::Eval::NNUE {
   bool save_eval(std::ostream& stream);
   bool save_eval(const std::optional<std::string>& filename);
 
-}  // namespace Stockfish::Eval::NNUE
+}  // namespace Stockfish16::Eval::NNUE
 
 #endif // #ifndef NNUE_EVALUATE_NNUE_H_INCLUDED

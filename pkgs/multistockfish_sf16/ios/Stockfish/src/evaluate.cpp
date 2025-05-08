@@ -56,7 +56,7 @@
 
 using namespace std;
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 namespace Eval {
 
@@ -1155,4 +1155,4 @@ std::string Eval::trace(Position& pos) {
   return ss.str();
 }
 
-} // namespace Stockfish
+} // namespace Stockfish16

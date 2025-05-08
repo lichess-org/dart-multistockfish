@@ -27,7 +27,7 @@
 #include "position.h"
 #include "types.h"
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 /// StatsEntry stores the stat table value. It is usually a number but could
 /// be a move or even a nested history. We use a class instead of naked value
@@ -150,6 +150,6 @@ private:
   ExtMove moves[MAX_MOVES];
 };
 
-} // namespace Stockfish
+} // namespace Stockfish16
 
 #endif // #ifndef MOVEPICK_H_INCLUDED

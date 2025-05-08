@@ -21,7 +21,7 @@
 #include "movegen.h"
 #include "position.h"
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 namespace {
 
@@ -281,4 +281,4 @@ ExtMove* generate<LEGAL>(const Position& pos, ExtMove* moveList) {
   return moveList;
 }
 
-} // namespace Stockfish
+} // namespace Stockfish16

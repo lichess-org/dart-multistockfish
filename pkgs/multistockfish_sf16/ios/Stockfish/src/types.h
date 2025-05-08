@@ -83,7 +83,7 @@
 #  define pext(b, m) 0
 #endif
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 #ifdef USE_POPCNT
 constexpr bool HasPopCnt = true;
@@ -484,7 +484,7 @@ constexpr Key make_key(uint64_t seed) {
   return seed * 6364136223846793005ULL + 1442695040888963407ULL;
 }
 
-} // namespace Stockfish
+} // namespace Stockfish16
 
 #endif // #ifndef TYPES_H_INCLUDED
 

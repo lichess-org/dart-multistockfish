@@ -36,7 +36,7 @@
 
 using namespace std;
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 namespace {
 
@@ -395,4 +395,4 @@ Move UCI::to_move(const Position& pos, string& str) {
   return MOVE_NONE;
 }
 
-} // namespace Stockfish
+} // namespace Stockfish16

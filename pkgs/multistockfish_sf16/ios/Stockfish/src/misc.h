@@ -31,7 +31,7 @@
 #define stringify2(x) #x
 #define stringify(x) stringify2(x)
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 std::string engine_info(bool to_uci = false);
 std::string compiler_info();
@@ -171,6 +171,6 @@ namespace CommandLine {
   extern std::string workingDirectory; // path of the working directory
 }
 
-} // namespace Stockfish
+} // namespace Stockfish16
 
 #endif // #ifndef MISC_H_INCLUDED

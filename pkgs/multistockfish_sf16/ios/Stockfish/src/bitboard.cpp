@@ -22,7 +22,7 @@
 #include "bitboard.h"
 #include "misc.h"
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 uint8_t PopCnt16[1 << 16];
 uint8_t SquareDistance[SQUARE_NB][SQUARE_NB];
@@ -215,4 +215,4 @@ namespace {
   }
 }
 
-} // namespace Stockfish
+} // namespace Stockfish16

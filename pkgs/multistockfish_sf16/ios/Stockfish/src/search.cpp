@@ -36,7 +36,7 @@
 #include "syzygy/tbprobe.h"
 #include "nnue/evaluate_nnue.h"
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 namespace Search {
 
@@ -366,7 +366,7 @@ void Thread::search() {
               // Adjust the effective depth searched, but ensuring at least one effective increment for every
               // four searchAgain steps (see issue #2717).
               Depth adjustedDepth = std::max(1, rootDepth - failedHighCnt - 3 * (searchAgainCounter + 1) / 4);
-              bestValue = Stockfish::search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
+              bestValue = Stockfish16::search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
               // Bring the best move to the front. It is critical that sorting
               // is done with a stable algorithm because all the values but the
@@ -1985,4 +1985,4 @@ void Tablebases::rank_root_moves(Position& pos, Search::RootMoves& rootMoves) {
     }
 }
 
-} // namespace Stockfish
+} // namespace Stockfish16

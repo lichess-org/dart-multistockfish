@@ -68,7 +68,7 @@ using fun8_t = bool(*)(HANDLE, BOOL, PTOKEN_PRIVILEGES, DWORD, PTOKEN_PRIVILEGES
 
 using namespace std;
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 namespace {
 
@@ -784,4 +784,4 @@ void init([[maybe_unused]] int argc, char* argv[]) {
 
 } // namespace CommandLine
 
-} // namespace Stockfish
+} // namespace Stockfish16

@@ -21,7 +21,7 @@
 #include "bitboard.h"
 #include "movepick.h"
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 namespace {
 
@@ -292,4 +292,4 @@ top:
   return MOVE_NONE; // Silence warning
 }
 
-} // namespace Stockfish
+} // namespace Stockfish16

@@ -23,7 +23,7 @@
 
 #include "../nnue_common.h"
 
-namespace Stockfish::Eval::NNUE::Layers {
+namespace Stockfish16::Eval::NNUE::Layers {
 
   // Clipped ReLU
   template <IndexType InDims>
@@ -115,6 +115,6 @@ namespace Stockfish::Eval::NNUE::Layers {
     }
   };
 
-}  // namespace Stockfish::Eval::NNUE::Layers
+}  // namespace Stockfish16::Eval::NNUE::Layers
 
 #endif // NNUE_LAYERS_SQR_CLIPPED_RELU_H_INCLUDED

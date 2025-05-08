@@ -22,7 +22,7 @@
 
 #include "../../position.h"
 
-namespace Stockfish::Eval::NNUE::Features {
+namespace Stockfish16::Eval::NNUE::Features {
 
   // Index of a feature for a given king position and another piece on some square
   template<Color Perspective>
@@ -81,4 +81,4 @@ namespace Stockfish::Eval::NNUE::Features {
     return st->dirtyPiece.piece[0] == make_piece(perspective, KING);
   }
 
-}  // namespace Stockfish::Eval::NNUE::Features
+}  // namespace Stockfish16::Eval::NNUE::Features

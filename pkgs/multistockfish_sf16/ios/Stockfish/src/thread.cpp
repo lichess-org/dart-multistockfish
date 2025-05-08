@@ -26,7 +26,7 @@
 #include "syzygy/tbprobe.h"
 #include "tt.h"
 
-namespace Stockfish {
+namespace Stockfish16 {
 
 ThreadPool Threads; // Global object
 
@@ -265,4 +265,4 @@ void ThreadPool::wait_for_search_finished() const {
             th->wait_for_search_finished();
 }
 
-} // namespace Stockfish
+} // namespace Stockfish16
