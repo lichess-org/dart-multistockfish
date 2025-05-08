@@ -1,3 +1,7 @@
+## 0.2.1
+
+- Fix wrong NNUE file for Stockfish 17.1
+
 ## 0.2.0
 
 - Use last Stockfish as well on armv7 devices.

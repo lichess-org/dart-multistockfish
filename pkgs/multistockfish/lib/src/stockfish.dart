@@ -58,7 +58,7 @@ class Stockfish {
     return _instance!;
   }
 
-  static const defaultBigNetFile = 'nn-1111cefa1111.nnue';
+  static const defaultBigNetFile = 'nn-1c0000000000.nnue';
   static const defaultSmallNetFile = 'nn-37f18f62d772.nnue';
 
   static Stockfish? _instance;
