@@ -193,21 +193,22 @@ DynamicLibrary _openDynamicLibrary(String libName) {
   throw UnsupportedError('Unknown platform: ${Platform.operatingSystem}');
 }
 
-StockfishBindings? _nnueBindings;
+StockfishBindings? _latestBindings;
+StockfishBindings? _sf16Bindings;
 StockfishBindings? _fairyBindings;
 
 StockfishBindings _getBindings(StockfishFlavor flavor) {
   switch (flavor) {
     case StockfishFlavor.latestNoNNUE:
-      _nnueBindings ??= StockfishBindings(
+      _latestBindings ??= StockfishBindings(
         _openDynamicLibrary('multistockfish_chess'),
       );
-      return _nnueBindings!;
+      return _latestBindings!;
     case StockfishFlavor.sf16:
-      _nnueBindings ??= StockfishBindings(
+      _sf16Bindings ??= StockfishBindings(
         _openDynamicLibrary('multistockfish_sf16'),
       );
-      return _nnueBindings!;
+      return _sf16Bindings!;
     case StockfishFlavor.variant:
       _fairyBindings ??= StockfishBindings(
         _openDynamicLibrary('multistockfish_variant'),
