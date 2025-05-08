@@ -58,11 +58,11 @@ class Stockfish {
     return _instance!;
   }
 
-  /// The default big net file for NNUE evaluation of Stockfish 17.1.
-  static const defaultBigNetFile = 'nn-1c0000000000.nnue';
+  /// The default big NNUE file for evaluation of [StockfishFlavor.latestNoNNUE].
+  static const latestBigNNUE = 'nn-1c0000000000.nnue';
 
-  /// The default small net file for NNUE evaluation of Stockfish 17.1.
-  static const defaultSmallNetFile = 'nn-37f18f62d772.nnue';
+  /// The default small NNUE file for evaluation of [StockfishFlavor.latestNoNNUE].
+  static const latestSmallNNUE = 'nn-37f18f62d772.nnue';
 
   static Stockfish? _instance;
 
