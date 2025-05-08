@@ -4,9 +4,9 @@ Multiple flavors of Stockfish Engine.
 
 This plugin provides the following Stockfish engines:
 
-* [Stockfish 16](https://stockfishchess.org) engine (with embedded NNUE)
-* [Stockfish 17.1](https://stockfishchess.org) engine (without embedded NNUE)
-* [Fairy-Stockfish](https://fairy-stockfish.github.io) for chess variants
+* [Stockfish 16](https://stockfishchess.org), with embedded NNUE (38MB)
+* [Stockfish 17.1](https://stockfishchess.org), without embedded NNUE
+* [Fairy-Stockfish](https://fairy-stockfish.github.io), for chess variants
 
 ## Usage
 
