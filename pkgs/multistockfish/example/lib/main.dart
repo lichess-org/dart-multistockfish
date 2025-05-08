@@ -12,8 +12,8 @@ import 'package:path_provider/path_provider.dart'
 import 'stockfish_output.dart';
 
 const _kDownloadUrl = 'https://tests.stockfishchess.org/api/nn/';
-const _kBigNet = 'nn-1111cefa1111.nnue';
-const _kSmallNet = 'nn-37f18f62d772.nnue';
+const _kBigNet = Stockfish.defaultBigNetFile;
+const _kSmallNet = Stockfish.defaultSmallNetFile;
 
 final _bigNetUrl = Uri.parse('$_kDownloadUrl$_kBigNet');
 final _smallNetUrl = Uri.parse('$_kDownloadUrl$_kSmallNet');
@@ -39,7 +39,7 @@ class MyApp extends StatefulWidget {
 
 class _AppState extends State<MyApp> {
   Directory? appSupportDirectory;
-  StockfishFlavor flavor = StockfishFlavor.variant;
+  StockfishFlavor flavor = StockfishFlavor.sf16;
   late Stockfish stockfish;
 
   final Completer<NNUEFiles> _nnueFilesCompleter = Completer<NNUEFiles>();
@@ -197,7 +197,7 @@ class _AppState extends State<MyApp> {
                         items: StockfishFlavor.values
                             .where(
                               (flavor) =>
-                                  flavor != StockfishFlavor.chess ||
+                                  flavor != StockfishFlavor.latestNoNNUE ||
                                   snapshot.hasData,
                             )
                             .map(
