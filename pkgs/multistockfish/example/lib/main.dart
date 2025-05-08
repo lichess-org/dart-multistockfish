@@ -12,8 +12,8 @@ import 'package:path_provider/path_provider.dart'
 import 'stockfish_output.dart';
 
 const _kDownloadUrl = 'https://tests.stockfishchess.org/api/nn/';
-const _kBigNet = 'nn-1111cefa1111.nnue';
-const _kSmallNet = 'nn-37f18f62d772.nnue';
+const _kBigNet = Stockfish.defaultBigNetFile;
+const _kSmallNet = Stockfish.defaultSmallNetFile;
 
 final _bigNetUrl = Uri.parse('$_kDownloadUrl$_kBigNet');
 final _smallNetUrl = Uri.parse('$_kDownloadUrl$_kSmallNet');
