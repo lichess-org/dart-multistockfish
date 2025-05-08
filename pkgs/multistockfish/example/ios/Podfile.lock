@@ -32,7 +32,7 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
   multistockfish_chess: 1bbb4caeddb71744c9726ff1555e0818ac49b1a2
-  multistockfish_sf16: cd819422a48d9dcc9ce5a24fc81dcc028c9bb922
+  multistockfish_sf16: 1badef36caaf09a347dcc5ebec8a16a3c29ed41a
   multistockfish_variant: 77ee0d81c68a9b72f3d0e1794f879ab972ea80b6
   path_provider_foundation: 080d55be775b7414fd5a5ef3ac137b97b097e564
 
