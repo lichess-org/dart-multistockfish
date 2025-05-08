@@ -14,11 +14,11 @@ Pod::Spec.new do |s|
   s.license          = { :file => '../LICENSE', :type => 'GPL' }
   s.author           = { 'lichess.org' => 'contact@lichess.org' }
   s.source = { :git => pubspec['repository'], :tag => s.version.to_s }
-  s.source_files = 'Classes/**/*', 'Stockfish/src/**/*'
+  s.source_files = 'Classes/**/*', 'Stockfish16/src/**/*'
   s.exclude_files = [
-    'Stockfish/src/Makefile',
-    'Stockfish/src/main.cpp',
-    'Stockfish/src/incbin/UNLICENCE',
+    'Stockfish16/src/Makefile',
+    'Stockfish16/src/main.cpp',
+    'Stockfish16/src/incbin/UNLICENCE',
   ]
   s.dependency 'Flutter'
   s.platform = :ios, '12.0'

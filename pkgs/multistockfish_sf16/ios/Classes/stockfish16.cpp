@@ -2,15 +2,15 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include "../Stockfish/src/bitboard.h"
-#include "../Stockfish/src/endgame.h"
-#include "../Stockfish/src/position.h"
-#include "../Stockfish/src/psqt.h"
-#include "../Stockfish/src/search.h"
-#include "../Stockfish/src/syzygy/tbprobe.h"
-#include "../Stockfish/src/thread.h"
-#include "../Stockfish/src/tt.h"
-#include "../Stockfish/src/uci.h"
+#include "../Stockfish16/src/bitboard.h"
+#include "../Stockfish16/src/endgame.h"
+#include "../Stockfish16/src/position.h"
+#include "../Stockfish16/src/psqt.h"
+#include "../Stockfish16/src/search.h"
+#include "../Stockfish16/src/syzygy/tbprobe.h"
+#include "../Stockfish16/src/thread.h"
+#include "../Stockfish16/src/tt.h"
+#include "../Stockfish16/src/uci.h"
 
 #include "stockfish16.h"
 

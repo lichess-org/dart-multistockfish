@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.10)
 
 project(multistockfish_sf16_library VERSION 0.2.0 LANGUAGES CXX)
 
-file(GLOB_RECURSE sf16Paths "../ios/Stockfish/src/*.cpp")
+file(GLOB_RECURSE sf16Paths "../ios/Stockfish16/src/*.cpp")
 
 add_library(
   multistockfish_sf16
