@@ -15,6 +15,7 @@ const _kDownloadUrl = 'https://tests.stockfishchess.org/api/nn/';
 const _kBigNet = Stockfish.latestBigNNUE;
 const _kSmallNet = Stockfish.latestSmallNNUE;
 
+
 final _bigNetUrl = Uri.parse('$_kDownloadUrl$_kBigNet');
 final _smallNetUrl = Uri.parse('$_kDownloadUrl$_kSmallNet');
 
