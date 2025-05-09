@@ -1,3 +1,8 @@
+## 0.3.0
+
+- Add Stockfish 16 (embedded NNUE).
+- Default engine is now Stockfish 16.
+
 ## 0.2.1
 
 - Fix wrong NNUE file for Stockfish 17.1

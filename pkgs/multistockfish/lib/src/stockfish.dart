@@ -23,24 +23,24 @@ class Stockfish {
   /// Throws a [StateError] if an active instance is being used.
   /// Owner must [dispose] it before a new instance can be created.
   ///
-  /// When [flavor] is [StockfishFlavor.chess], [smallNetPath] and [bigNetPath] must be provided.
+  /// When [flavor] is [StockfishFlavor.latestNoNNUE], [smallNetPath] and [bigNetPath] must be provided.
   factory Stockfish({
     /// The flavor of Stockfish to use.
-    StockfishFlavor flavor = StockfishFlavor.variant,
+    StockfishFlavor flavor = StockfishFlavor.sf16,
 
     /// The variant of chess to use. (Only for [StockfishFlavor.variant]).
     ///
     /// Example: '3check', 'crazyhouse', 'atomic', 'kingofthehill', 'antichess', 'horde', 'racingkings'.
     String? variant,
 
-    /// Full path to the small net file for NNUE evaluation.
+    /// Full path to the small net file for NNUE evaluation. Only used for [StockfishFlavor.latestNoNNUE].
     String? smallNetPath,
 
-    /// Full path to the big net file for NNUE evaluation.
+    /// Full path to the big net file for NNUE evaluation. Only used for [StockfishFlavor.latestNoNNUE].
     String? bigNetPath,
   }) {
     assert(
-      flavor != StockfishFlavor.chess ||
+      flavor != StockfishFlavor.latestNoNNUE ||
           (smallNetPath != null && bigNetPath != null),
       'NNUE evaluation requires smallNetPath and bigNetPath',
     );
@@ -58,8 +58,11 @@ class Stockfish {
     return _instance!;
   }
 
-  static const defaultBigNetFile = 'nn-1c0000000000.nnue';
-  static const defaultSmallNetFile = 'nn-37f18f62d772.nnue';
+  /// The default big NNUE file for evaluation of [StockfishFlavor.latestNoNNUE].
+  static const latestBigNNUE = 'nn-1c0000000000.nnue';
+
+  /// The default small NNUE file for evaluation of [StockfishFlavor.latestNoNNUE].
+  static const latestSmallNNUE = 'nn-37f18f62d772.nnue';
 
   static Stockfish? _instance;
 
@@ -123,7 +126,9 @@ class Stockfish {
                   stdin = 'setoption name UCI_Variant value $variant';
                 }
 
-                if (bigNetPath != null && smallNetPath != null) {
+                if (flavor == StockfishFlavor.latestNoNNUE &&
+                    bigNetPath != null &&
+                    smallNetPath != null) {
                   stdin = 'setoption name EvalFile value $bigNetPath';
                   stdin = 'setoption name EvalFileSmall value $smallNetPath';
                 }
@@ -188,16 +193,22 @@ DynamicLibrary _openDynamicLibrary(String libName) {
   throw UnsupportedError('Unknown platform: ${Platform.operatingSystem}');
 }
 
-StockfishBindings? _nnueBindings;
+StockfishBindings? _latestBindings;
+StockfishBindings? _sf16Bindings;
 StockfishBindings? _fairyBindings;
 
 StockfishBindings _getBindings(StockfishFlavor flavor) {
   switch (flavor) {
-    case StockfishFlavor.chess:
-      _nnueBindings ??= StockfishBindings(
+    case StockfishFlavor.latestNoNNUE:
+      _latestBindings ??= StockfishBindings(
         _openDynamicLibrary('multistockfish_chess'),
       );
-      return _nnueBindings!;
+      return _latestBindings!;
+    case StockfishFlavor.sf16:
+      _sf16Bindings ??= StockfishBindings(
+        _openDynamicLibrary('multistockfish_sf16'),
+      );
+      return _sf16Bindings!;
     case StockfishFlavor.variant:
       _fairyBindings ??= StockfishBindings(
         _openDynamicLibrary('multistockfish_variant'),

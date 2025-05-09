@@ -2,14 +2,17 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include "../Stockfish/src/bitboard.h"
-#include "../Stockfish/src/misc.h"
-#include "../Stockfish/src/position.h"
-#include "../Stockfish/src/types.h"
-#include "../Stockfish/src/uci.h"
-#include "../Stockfish/src/tune.h"
+#include "../Stockfish16/src/bitboard.h"
+#include "../Stockfish16/src/endgame.h"
+#include "../Stockfish16/src/position.h"
+#include "../Stockfish16/src/psqt.h"
+#include "../Stockfish16/src/search.h"
+#include "../Stockfish16/src/syzygy/tbprobe.h"
+#include "../Stockfish16/src/thread.h"
+#include "../Stockfish16/src/tt.h"
+#include "../Stockfish16/src/uci.h"
 
-#include "stockfish_nnue.h"
+#include "stockfish16.h"
 
 // https://jineshkj.wordpress.com/2006/12/22/how-to-capture-stdin-stdout-and-stderr-of-child-program/
 #define NUM_PIPES 2
@@ -22,22 +25,27 @@
 #define CHILD_READ_FD (pipes[PARENT_WRITE_PIPE][READ_FD])
 #define CHILD_WRITE_FD (pipes[PARENT_READ_PIPE][WRITE_FD])
 
-namespace StockfishLatest {
-  using namespace Stockfish;
+namespace Stockfish16Init {
+  using namespace Stockfish16;
 
   int main(int argc, char* argv[]) {
-
     std::cout << engine_info() << std::endl;
 
+    CommandLine::init(argc, argv);
+    UCI::init(Options);
+    Tune::init();
+    PSQT::init();
     Bitboards::init();
     Position::init();
+    Bitbases::init();
+    Endgames::init();
+    Threads.set(size_t(Options["Threads"]));
+    Search::clear(); // After threads are up
+    Eval::NNUE::init();
 
-    UCIEngine uci(argc, argv);
+    UCI::loop(argc, argv);
 
-    Tune::init(uci.engine_options());
-
-    uci.loop();
-
+    Threads.set(0);
     return 0;
   }
 }
@@ -65,7 +73,7 @@ int stockfish_main()
 
   int argc = 1;
   char *argv[] = {""};
-  int exitCode = StockfishLatest::main(argc, argv);
+  int exitCode = Stockfish16Init::main(argc, argv);
 
   std::cout << QUITOK << std::flush;
 

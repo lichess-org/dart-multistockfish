@@ -4,8 +4,9 @@ Multiple flavors of Stockfish Engine.
 
 This plugin provides the following Stockfish engines:
 
-* [Official Stockfish](https://stockfishchess.org) engine for chess and chess 960
-* [Fairy-Stockfish](https://fairy-stockfish.github.io) for chess variants
+* [Stockfish 16](https://stockfishchess.org), with embedded NNUE (38MB)
+* [Stockfish 17.1](https://stockfishchess.org), without embedded NNUE
+* [Fairy-Stockfish](https://fairy-stockfish.github.io), for chess variants
 
 ## Usage
 
@@ -16,7 +17,7 @@ This plugin provides the following Stockfish engines:
 > will throw a StateError if called while another instance is running.
 
 > [!NOTE]
-> When using the `StockfishFlavor.chess` flavor, you need to download the `.nnue` files before
+> When using the `StockfishFlavor.latestNoNNUE` flavor, you need to download the `.nnue` files before
 > starting an evaluation, since it is not embedded in the binary.
 
 ```dart
