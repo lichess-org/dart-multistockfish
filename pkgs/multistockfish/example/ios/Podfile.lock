@@ -31,9 +31,9 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
-  multistockfish_chess: 1bbb4caeddb71744c9726ff1555e0818ac49b1a2
-  multistockfish_sf16: 1badef36caaf09a347dcc5ebec8a16a3c29ed41a
-  multistockfish_variant: 77ee0d81c68a9b72f3d0e1794f879ab972ea80b6
+  multistockfish_chess: 0c4f08d6987f359afa5c9f7b02e04f37dc336d02
+  multistockfish_sf16: 0b68c76717a38aab7af00c5a54eb87b3b6df9b17
+  multistockfish_variant: e11fc38273552461df4b537ccadd101b18e0e018
   path_provider_foundation: 080d55be775b7414fd5a5ef3ac137b97b097e564
 
 PODFILE CHECKSUM: 4305caec6b40dde0ae97be1573c53de1882a07e5

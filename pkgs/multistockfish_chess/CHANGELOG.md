@@ -1,3 +1,7 @@
+## 0.2.1
+
+- Fix Pod target configuration.
+
 ## 0.2.0
 
 - Use last Stockfish as well on armv7 devices.

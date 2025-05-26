@@ -19,6 +19,12 @@ dependencies:
   multistockfish_sf16: ^0.1.0
   multistockfish_chess: ^0.2.0
   multistockfish_variant: ^0.1.0
+  # multistockfish_sf16:
+  #   path: ../multistockfish_sf16
+  # multistockfish_chess:
+  #   path: ../multistockfish_chess
+  # multistockfish_variant:
+  #   path: ../multistockfish_variant
 
 dev_dependencies:
   flutter_lints: ^5.0.0
