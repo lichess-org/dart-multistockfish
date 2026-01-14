@@ -172,7 +172,9 @@ class _AppState extends State<MyApp> {
                     builder: (_, _) {
                       return DropdownButton<StockfishFlavor>(
                         onChanged:
-                            stockfish.state.value == StockfishState.disposed
+                            stockfish.state.value == StockfishState.disposed ||
+                                    stockfish.state.value ==
+                                        StockfishState.initial
                                 ? (value) {
                                   setState(() {
                                     flavor = value!;

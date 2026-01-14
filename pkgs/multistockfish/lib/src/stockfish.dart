@@ -46,7 +46,14 @@ class Stockfish {
     );
 
     if (_instance != null) {
-      throw StateError('Multiple instances are not supported.');
+      switch (_instance!._state.value) {
+        case StockfishState.disposed:
+        case StockfishState.error:
+        case StockfishState.initial:
+          _instance!.dispose();
+        default:
+          throw StateError('Multiple running instances are not supported.');
+      }
     }
 
     _instance = Stockfish._(
