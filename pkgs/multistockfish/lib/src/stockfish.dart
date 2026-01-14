@@ -12,6 +12,14 @@ import 'stockfish_state.dart';
 
 final _logger = Logger('Stockfish');
 
+/// Zone key for overriding bindings factory in tests.
+@visibleForTesting
+const stockfishBindingsFactoryKey = #_stockfishBindingsFactory;
+
+/// Zone key for overriding isolate spawning in tests.
+@visibleForTesting
+const stockfishSpawnIsolatesKey = #_stockfishSpawnIsolates;
+
 /// A Dart wrapper around the Stockfish chess engine.
 ///
 /// The engine is started in a separate isolate.
@@ -160,11 +168,14 @@ class Stockfish {
         _stdoutPort.sendPort,
         flavor,
       );
-      final state = success ? StockfishState.starting : StockfishState.error;
 
-      _logger.fine('The init isolate reported $state');
+      if (!success) {
+        _logger.severe('Failed to spawn isolates');
+        _state._setValue(StockfishState.error);
+        return;
+      }
 
-      _state._setValue(state);
+      _state._setValue(StockfishState.starting);
 
       // Wait for the engine to be ready by checking the first non-empty line (usually its name).
       await stdout
@@ -259,19 +270,25 @@ StockfishBindings? _sf16Bindings;
 StockfishBindings? _fairyBindings;
 
 StockfishBindings _getBindings(StockfishFlavor flavor) {
+  // Check for zone override (used in tests)
+  final override = Zone.current[stockfishBindingsFactoryKey];
+  if (override != null) {
+    return (override as StockfishBindings Function(StockfishFlavor))(flavor);
+  }
+
   switch (flavor) {
     case StockfishFlavor.latestNoNNUE:
-      _latestBindings ??= StockfishBindings(
+      _latestBindings ??= StockfishBindingsFFI(
         _openDynamicLibrary('multistockfish_chess'),
       );
       return _latestBindings!;
     case StockfishFlavor.sf16:
-      _sf16Bindings ??= StockfishBindings(
+      _sf16Bindings ??= StockfishBindingsFFI(
         _openDynamicLibrary('multistockfish_sf16'),
       );
       return _sf16Bindings!;
     case StockfishFlavor.variant:
-      _fairyBindings ??= StockfishBindings(
+      _fairyBindings ??= StockfishBindingsFFI(
         _openDynamicLibrary('multistockfish_variant'),
       );
       return _fairyBindings!;
@@ -315,6 +332,16 @@ Future<bool> _spawnIsolates(
   SendPort stdoutPort,
   StockfishFlavor flavor,
 ) async {
+  // Check for zone override (used in tests)
+  final override = Zone.current[stockfishSpawnIsolatesKey];
+  if (override != null) {
+    return (override as Future<bool> Function(SendPort, SendPort, StockfishFlavor))(
+      mainPort,
+      stdoutPort,
+      flavor,
+    );
+  }
+
   final bindings = _getBindings(flavor);
 
   final initResult = bindings.init();

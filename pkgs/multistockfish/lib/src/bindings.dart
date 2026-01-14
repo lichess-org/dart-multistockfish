@@ -4,26 +4,42 @@ import 'package:logging/logging.dart';
 
 final _logger = Logger('Stockfish');
 
-class StockfishBindings {
+/// Abstract interface for Stockfish native bindings.
+abstract class StockfishBindings {
+  /// Initializes the Stockfish engine.
+  int init();
+
+  /// Runs the Stockfish engine.
+  int main();
+
+  /// Writes to the Stockfish engine's stdin.
+  int stdinWrite(String input);
+
+  /// Reads from the Stockfish engine's stdout.
+  String? stdoutRead();
+}
+
+/// FFI implementation of [StockfishBindings].
+class StockfishBindingsFFI implements StockfishBindings {
   /// The symbols are looked up in [dynamicLibrary].
-  StockfishBindings(ffi.DynamicLibrary dynamicLibrary)
+  StockfishBindingsFFI(ffi.DynamicLibrary dynamicLibrary)
     : _lookup = dynamicLibrary.lookup;
 
   /// Holds the symbol lookup function.
   final ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName)
   _lookup;
 
-  /// Initializes the Stockfish engine.
+  @override
   int init() {
     return _init();
   }
 
-  /// Runs the Stockfish engine.
+  @override
   int main() {
     return _main();
   }
 
-  /// Writes to the Stockfish engine's stdin.
+  @override
   int stdinWrite(String input) {
     final inputPtr = input.toNativeUtf8();
     final result = _stdinWrite(inputPtr);
@@ -31,7 +47,7 @@ class StockfishBindings {
     return result;
   }
 
-  /// Reads from the Stockfish engine's stdout.
+  @override
   String? stdoutRead() {
     final pointer = _stdoutRead();
 
