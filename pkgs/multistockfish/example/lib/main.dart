@@ -15,7 +15,6 @@ const _kDownloadUrl = 'https://tests.stockfishchess.org/api/nn/';
 const _kBigNet = Stockfish.latestBigNNUE;
 const _kSmallNet = Stockfish.latestSmallNNUE;
 
-
 final _bigNetUrl = Uri.parse('$_kDownloadUrl$_kBigNet');
 final _smallNetUrl = Uri.parse('$_kDownloadUrl$_kSmallNet');
 
@@ -264,6 +263,22 @@ class _AppState extends State<MyApp> {
                         (_, __) => Text(
                           'stockfish.state=${stockfish.state.value}',
                           key: const ValueKey('stockfish.state'),
+                        ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: AnimatedBuilder(
+                    animation: stockfish.state,
+                    builder:
+                        (_, __) => ElevatedButton(
+                          onPressed:
+                              stockfish.state.value == StockfishState.initial
+                                  ? () {
+                                    stockfish.start();
+                                  }
+                                  : null,
+                          child: const Text('Start Stockfish instance'),
                         ),
                   ),
                 ),

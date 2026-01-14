@@ -85,13 +85,16 @@ class Stockfish {
   final _mainPort = ReceivePort();
   final _stdoutPort = ReceivePort();
 
+  bool _initializationInProgress = false;
+
   late StreamSubscription _mainSubscription;
   late StreamSubscription _stdoutSubscription;
 
   Stockfish._(this.flavor, {this.variant, this.smallNetPath, this.bigNetPath}) {
-    _mainSubscription = _mainPort.listen(
-      (message) => _cleanUp(message is int ? message : 1),
-    );
+    _mainSubscription = _mainPort.listen((message) {
+      _logger.fine('The main isolate sent $message');
+      _cleanUp(message is int ? message : 1);
+    });
 
     _stdoutSubscription = _stdoutPort.listen((message) {
       if (message is String) {
@@ -101,49 +104,6 @@ class Stockfish {
         _logger.fine('The stdout isolate sent $message');
       }
     });
-
-    compute(
-      _spawnIsolates,
-      _ComputeArgs([_mainPort.sendPort, _stdoutPort.sendPort], flavor),
-    ).then(
-      (success) {
-        final state = success ? StockfishState.starting : StockfishState.error;
-
-        _logger.fine('The init isolate reported $state');
-
-        _state._setValue(state);
-
-        // Wait for the engine to be ready by checking the first non-empty line (usually its name).
-        stdout
-            .firstWhere((line) => line.isNotEmpty)
-            .timeout(const Duration(seconds: 3))
-            .then(
-              (_) {
-                // The engine is ready.
-                _state._setValue(StockfishState.ready);
-
-                if (flavor == StockfishFlavor.variant && variant != null) {
-                  stdin = 'setoption name UCI_Variant value $variant';
-                }
-
-                if (flavor == StockfishFlavor.latestNoNNUE &&
-                    bigNetPath != null &&
-                    smallNetPath != null) {
-                  stdin = 'setoption name EvalFile value $bigNetPath';
-                  stdin = 'setoption name EvalFileSmall value $smallNetPath';
-                }
-              },
-              onError: (error) {
-                _logger.severe('The engine did not start in time: $error');
-                _cleanUp(1);
-              },
-            );
-      },
-      onError: (error) {
-        _logger.severe('The init isolate encountered an error $error');
-        _cleanUp(1);
-      },
-    );
   }
 
   /// The current state of the underlying C++ engine.
@@ -164,9 +124,94 @@ class Stockfish {
     _bindings.stdinWrite('$line\n');
   }
 
-  /// Stops the C++ engine.
+  /// Starts the C++ engine.
+  ///
+  /// Returns a [Future] that completes when the engine is ready to accept commands.
+  ///
+  /// Throws a [TimeoutException] if the engine does not become ready in time.
+  Future<void> start() async {
+    if (_initializationInProgress) {
+      _logger.warning('Initialization is already in progress.');
+      return;
+    }
+
+    if (_state.value == StockfishState.disposed) {
+      throw StateError('Stockfish has been disposed.');
+    }
+
+    if (_state.value != StockfishState.initial) {
+      _logger.warning('Stockfish has already been started.');
+      return;
+    }
+
+    _initializationInProgress = true;
+
+    try {
+      final success = await _spawnIsolates(
+        _mainPort.sendPort,
+        _stdoutPort.sendPort,
+        flavor,
+      );
+      final state = success ? StockfishState.starting : StockfishState.error;
+
+      _logger.fine('The init isolate reported $state');
+
+      _state._setValue(state);
+
+      // Wait for the engine to be ready by checking the first non-empty line (usually its name).
+      await stdout
+          .firstWhere((line) => line.isNotEmpty)
+          .timeout(const Duration(seconds: 10));
+
+      _state._setValue(StockfishState.ready);
+
+      if (flavor == StockfishFlavor.variant && variant != null) {
+        stdin = 'setoption name UCI_Variant value $variant';
+      }
+
+      if (flavor == StockfishFlavor.latestNoNNUE &&
+          bigNetPath != null &&
+          smallNetPath != null) {
+        stdin = 'setoption name EvalFile value $bigNetPath';
+        stdin = 'setoption name EvalFileSmall value $smallNetPath';
+      }
+    } on TimeoutException {
+      _cleanUp(1);
+      _logger.severe('The engine did not become ready in time.');
+      rethrow;
+    } catch (error) {
+      _cleanUp(1);
+      _logger.severe('The engine failed to start: $error.');
+      rethrow;
+    } finally {
+      _initializationInProgress = false;
+    }
+  }
+
+  /// Quits the C++ engine.
+  ///
+  /// After calling this method, the instance cannot be used anymore.
   void dispose() {
-    stdin = 'quit';
+    switch (_state.value) {
+      case StockfishState.disposed:
+      case StockfishState.error:
+        return;
+      case StockfishState.initial:
+        _cleanUp(0);
+      case StockfishState.starting:
+        void onReadyOnce() {
+          stdin = 'quit';
+          _state.removeListener(onReadyOnce);
+        }
+        _state.addListener(() {
+          if (_state.value == StockfishState.ready) {
+            onReadyOnce();
+          }
+        });
+      case StockfishState.ready:
+        stdin = 'quit';
+        break;
+    }
   }
 
   void _cleanUp(int exitCode) {
@@ -249,8 +294,11 @@ void _isolateStdout(_IsolateArgs args) {
   }
 }
 
-Future<bool> _spawnIsolates(_ComputeArgs args) async {
-  final (ports, flavor) = (args.mainAndStdout, args.flavor);
+Future<bool> _spawnIsolates(
+  SendPort mainPort,
+  SendPort stdoutPort,
+  StockfishFlavor flavor,
+) async {
   final bindings = _getBindings(flavor);
 
   final initResult = bindings.init();
@@ -260,27 +308,28 @@ Future<bool> _spawnIsolates(_ComputeArgs args) async {
   }
 
   try {
-    await Isolate.spawn(_isolateStdout, _IsolateArgs(ports[1], flavor));
+    await Isolate.spawn(
+      _isolateStdout,
+      _IsolateArgs(stdoutPort, flavor),
+      debugName: 'stockfish stdout isolate',
+    );
   } catch (error) {
     _logger.severe('Failed to spawn stdout isolate: $error');
     return false;
   }
 
   try {
-    await Isolate.spawn(_isolateMain, _IsolateArgs(ports[0], flavor));
+    await Isolate.spawn(
+      _isolateMain,
+      _IsolateArgs(mainPort, flavor),
+      debugName: 'stockfish main isolate',
+    );
   } catch (error) {
     _logger.severe('Failed to spawn main isolate: $error');
     return false;
   }
 
   return true;
-}
-
-class _ComputeArgs {
-  final List<SendPort> mainAndStdout;
-  final StockfishFlavor flavor;
-
-  const _ComputeArgs(this.mainAndStdout, this.flavor);
 }
 
 class _IsolateArgs {
