@@ -20,7 +20,7 @@ final _logger = Logger('Stockfish');
 class Stockfish {
   /// Creates a new Stockfish engine.
   ///
-  /// Throws a [StateError] if an active instance is being used.
+  /// Throws a [StateError] if a running instance already exists.
   /// Owner must [dispose] it before a new instance can be created.
   ///
   /// When [flavor] is [StockfishFlavor.latestNoNNUE], [smallNetPath] and [bigNetPath] must be provided.
@@ -207,14 +207,12 @@ class Stockfish {
         _cleanUp(0);
       case StockfishState.starting:
         void onReadyOnce() {
-          stdin = 'quit';
-          _state.removeListener(onReadyOnce);
-        }
-        _state.addListener(() {
           if (_state.value == StockfishState.ready) {
-            onReadyOnce();
+            stdin = 'quit';
+            _state.removeListener(onReadyOnce);
           }
-        });
+        }
+        _state.addListener(onReadyOnce);
       case StockfishState.ready:
         stdin = 'quit';
         break;
