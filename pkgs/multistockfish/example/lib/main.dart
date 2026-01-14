@@ -40,7 +40,7 @@ class MyApp extends StatefulWidget {
 class _AppState extends State<MyApp> {
   Directory? appSupportDirectory;
   StockfishFlavor flavor = StockfishFlavor.sf16;
-  late Stockfish stockfish;
+  Stockfish? stockfish;
 
   final Completer<NNUEFiles> _nnueFilesCompleter = Completer<NNUEFiles>();
 
@@ -67,8 +67,22 @@ class _AppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
-    stockfish = Stockfish(flavor: flavor, variant: variant);
+    _initStockfish();
     _fetchNNUEFiles();
+  }
+
+  Future<void> _initStockfish({
+    NNUEFiles? nnueFiles,
+  }) async {
+    final instance = await Stockfish.create(
+      flavor: flavor,
+      variant: variant,
+      bigNetPath: nnueFiles?.bigNetPath,
+      smallNetPath: nnueFiles?.smallNetPath,
+    );
+    if (mounted) {
+      setState(() => stockfish = instance);
+    }
   }
 
   Future<void> _fetchNNUEFiles() async {
@@ -167,176 +181,130 @@ class _AppState extends State<MyApp> {
                   ),
                 Padding(
                   padding: const EdgeInsets.all(8.0),
-                  child: AnimatedBuilder(
-                    animation: stockfish.state,
-                    builder: (_, _) {
-                      return DropdownButton<StockfishFlavor>(
-                        onChanged:
-                            stockfish.state.value == StockfishState.disposed ||
-                                    stockfish.state.value ==
-                                        StockfishState.initial
-                                ? (value) {
-                                  setState(() {
-                                    flavor = value!;
-                                    stockfish = Stockfish(
-                                      flavor: flavor,
-                                      bigNetPath:
-                                          snapshot.hasData
-                                              ? snapshot.requireData.bigNetPath
-                                              : null,
-                                      smallNetPath:
-                                          snapshot.hasData
-                                              ? snapshot
-                                                  .requireData
-                                                  .smallNetPath
-                                              : null,
-                                      variant: variant,
-                                    );
-                                  });
-                                }
-                                : null,
-                        value: flavor,
-                        items: StockfishFlavor.values
-                            .where(
-                              (flavor) =>
-                                  flavor != StockfishFlavor.latestNoNNUE ||
-                                  snapshot.hasData,
-                            )
-                            .map(
-                              (flavor) => DropdownMenuItem(
-                                value: flavor,
-                                child: Text(flavor.toString().split('.').last),
-                              ),
-                            )
-                            .toList(growable: false),
+                  child: DropdownButton<StockfishFlavor>(
+                    onChanged: (value) {
+                      flavor = value!;
+                      _initStockfish(
+                        nnueFiles: snapshot.hasData ? snapshot.requireData : null,
                       );
                     },
+                    value: flavor,
+                    items: StockfishFlavor.values
+                        .where(
+                          (flavor) =>
+                              flavor != StockfishFlavor.latestNoNNUE ||
+                              snapshot.hasData,
+                        )
+                        .map(
+                          (flavor) => DropdownMenuItem(
+                            value: flavor,
+                            child: Text(flavor.toString().split('.').last),
+                          ),
+                        )
+                        .toList(growable: false),
                   ),
                 ),
                 if (flavor == StockfishFlavor.variant)
-                  AnimatedBuilder(
-                    animation: stockfish.state,
-                    builder: (_, _) {
-                      return Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: DropdownButton<String>(
-                          onChanged:
-                              stockfish.state.value == StockfishState.disposed
-                                  ? (value) {
-                                    setState(() {
-                                      variant = value!;
-                                      stockfish = Stockfish(
-                                        flavor: flavor,
-                                        bigNetPath:
-                                            snapshot.hasData
-                                                ? snapshot
-                                                    .requireData
-                                                    .bigNetPath
-                                                : null,
-                                        smallNetPath:
-                                            snapshot.hasData
-                                                ? snapshot
-                                                    .requireData
-                                                    .smallNetPath
-                                                : null,
-                                        variant: variant,
-                                      );
-                                    });
-                                  }
-                                  : null,
-                          value: variant,
-                          items: _variants
-                              .map(
-                                (variant) => DropdownMenuItem(
-                                  value: variant,
-                                  child: Text(variant),
-                                ),
-                              )
-                              .toList(growable: false),
-                        ),
-                      );
-                    },
-                  ),
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: AnimatedBuilder(
-                    animation: stockfish.state,
-                    builder:
-                        (_, __) => Text(
-                          'stockfish.state=${stockfish.state.value}',
-                          key: const ValueKey('stockfish.state'),
-                        ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: AnimatedBuilder(
-                    animation: stockfish.state,
-                    builder:
-                        (_, __) => ElevatedButton(
-                          onPressed:
-                              stockfish.state.value == StockfishState.initial
-                                  ? () {
-                                    stockfish.start();
-                                  }
-                                  : null,
-                          child: const Text('Start Stockfish instance'),
-                        ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: AnimatedBuilder(
-                    animation: stockfish.state,
-                    builder:
-                        (_, __) => ElevatedButton(
-                          onPressed:
-                              stockfish.state.value == StockfishState.disposed
-                                  ? () {
-                                    final newInstance = Stockfish(
-                                      flavor: flavor,
-                                      variant: variant,
-                                    );
-                                    setState(() => stockfish = newInstance);
-                                  }
-                                  : null,
-                          child: const Text('Reset Stockfish instance'),
-                        ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: TextField(
-                    autocorrect: false,
-                    decoration: const InputDecoration(
-                      labelText: 'Custom UCI command',
-                      hintText: 'go infinite',
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: DropdownButton<String>(
+                      onChanged: (value) {
+                        variant = value!;
+                        _initStockfish(
+                          nnueFiles: snapshot.hasData ? snapshot.requireData : null,
+                        );
+                      },
+                      value: variant,
+                      items: _variants
+                          .map(
+                            (variant) => DropdownMenuItem(
+                              value: variant,
+                              child: Text(variant),
+                            ),
+                          )
+                          .toList(growable: false),
                     ),
-                    onSubmitted: (value) => stockfish.stdin = value,
-                    textInputAction: TextInputAction.send,
                   ),
-                ),
-                Wrap(
-                  children: [
-                        'd',
-                        'isready',
-                        'bench',
-                        'go movetime 3000',
-                        'stop',
-                        'quit',
-                      ]
-                      .map(
-                        (command) => Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: ElevatedButton(
-                            onPressed: () => stockfish.stdin = command,
-                            child: Text(command),
+                if (stockfish != null) ...[
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: AnimatedBuilder(
+                      animation: stockfish!.state,
+                      builder:
+                          (_, __) => Text(
+                            'stockfish.state=${stockfish!.state.value}',
+                            key: const ValueKey('stockfish.state'),
                           ),
-                        ),
-                      )
-                      .toList(growable: false),
-                ),
-                Expanded(child: OutputWidget(stockfish.stdout)),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: AnimatedBuilder(
+                      animation: stockfish!.state,
+                      builder:
+                          (_, __) => ElevatedButton(
+                            onPressed:
+                                stockfish!.state.value == StockfishState.initial
+                                    ? () {
+                                      stockfish!.start();
+                                    }
+                                    : null,
+                            child: const Text('Start Stockfish instance'),
+                          ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: AnimatedBuilder(
+                      animation: stockfish!.state,
+                      builder:
+                          (_, __) => ElevatedButton(
+                            onPressed:
+                                stockfish!.state.value == StockfishState.disposed
+                                    ? () => _initStockfish()
+                                    : null,
+                            child: const Text('Reset Stockfish instance'),
+                          ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: TextField(
+                      autocorrect: false,
+                      decoration: const InputDecoration(
+                        labelText: 'Custom UCI command',
+                        hintText: 'go infinite',
+                      ),
+                      onSubmitted: (value) => stockfish!.stdin = value,
+                      textInputAction: TextInputAction.send,
+                    ),
+                  ),
+                  Wrap(
+                    children: [
+                          'd',
+                          'isready',
+                          'bench',
+                          'go movetime 3000',
+                          'stop',
+                          'quit',
+                        ]
+                        .map(
+                          (command) => Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: ElevatedButton(
+                              onPressed: () => stockfish!.stdin = command,
+                              child: Text(command),
+                            ),
+                          ),
+                        )
+                        .toList(growable: false),
+                  ),
+                  Expanded(child: OutputWidget(stockfish!.stdout)),
+                ] else
+                  const Padding(
+                    padding: EdgeInsets.all(8.0),
+                    child: CircularProgressIndicator(),
+                  ),
               ],
             );
           },

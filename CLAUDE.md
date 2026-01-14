@@ -48,8 +48,9 @@ The engine runs in separate isolates:
 3. Commands sent via `stockfish_stdin_write()` from any thread
 
 ### Important Constraints
-- Only one Stockfish instance can run at a time (singleton enforced in factory constructor)
-- Engine start is deferred - must call `start()` after construction
+- Only one Stockfish instance can run at a time (singleton pattern)
+- Use `await Stockfish.create()` to create an instance - if another is running, it will be stopped first
+- Engine start is deferred - must call `start()` after creation
 - For `latestNoNNUE` flavor, NNUE files must be downloaded and paths provided
 
 ### Native Plugin Build

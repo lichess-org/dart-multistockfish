@@ -12,9 +12,9 @@ This plugin provides the following Stockfish engines:
 
 ### Init engine
 
-> [!WARNING]
-> Only one instance can be created at a time. The `Stockfish()` constructor
-> will throw a StateError if called while another instance is running.
+> [!NOTE]
+> Only one instance can run at a time. If `Stockfish.create()` is called while
+> another instance is running, it will be stopped first.
 
 > [!NOTE]
 > When using the `StockfishFlavor.latestNoNNUE` flavor, you need to download the `.nnue` files before
@@ -24,14 +24,14 @@ This plugin provides the following Stockfish engines:
 import 'package:multistockfish/multistockfish.dart';
 
 // create a new instance
-final stockfish = Stockfish();
+final stockfish = await Stockfish.create();
 
 // state is a ValueListenable<StockfishState>
-print(stockfish.state.value); # StockfishState.starting
+print(stockfish.state.value); // StockfishState.initial
 
-// the engine takes a few moment to start
-await Future.delayed(...)
-print(stockfish.state.value); # StockfishState.ready
+// start the engine
+await stockfish.start();
+print(stockfish.state.value); // StockfishState.ready
 ```
 
 ### UCI command

@@ -20,11 +20,10 @@ final _logger = Logger('Stockfish');
 class Stockfish {
   /// Creates a new Stockfish engine.
   ///
-  /// Throws a [StateError] if a running instance already exists.
-  /// Owner must [quit] it before a new instance can be created.
+  /// If another instance is currently running, it will be stopped first.
   ///
   /// When [flavor] is [StockfishFlavor.latestNoNNUE], [smallNetPath] and [bigNetPath] must be provided.
-  factory Stockfish({
+  static Future<Stockfish> create({
     /// The flavor of Stockfish to use.
     StockfishFlavor flavor = StockfishFlavor.sf16,
 
@@ -38,7 +37,7 @@ class Stockfish {
 
     /// Full path to the big net file for NNUE evaluation. Only used for [StockfishFlavor.latestNoNNUE].
     String? bigNetPath,
-  }) {
+  }) async {
     assert(
       flavor != StockfishFlavor.latestNoNNUE ||
           (smallNetPath != null && bigNetPath != null),
@@ -52,8 +51,9 @@ class Stockfish {
         case StockfishState.disposed:
         case StockfishState.error:
           break;
-        default:
-          throw StateError('Multiple running instances are not supported.');
+        case StockfishState.starting:
+        case StockfishState.ready:
+          await _instance!.quit();
       }
     }
 
