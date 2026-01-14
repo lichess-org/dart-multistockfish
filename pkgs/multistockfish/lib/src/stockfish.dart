@@ -171,7 +171,7 @@ class Stockfish {
 
       if (!success) {
         _logger.severe('Failed to spawn isolates');
-        _state._setValue(StockfishState.error);
+        _cleanUp(1);
         return;
       }
 
@@ -335,7 +335,8 @@ Future<bool> _spawnIsolates(
   // Check for zone override (used in tests)
   final override = Zone.current[stockfishSpawnIsolatesKey];
   if (override != null) {
-    return (override as Future<bool> Function(SendPort, SendPort, StockfishFlavor))(
+    return (override
+        as Future<bool> Function(SendPort, SendPort, StockfishFlavor))(
       mainPort,
       stdoutPort,
       flavor,
