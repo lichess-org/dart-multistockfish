@@ -21,7 +21,7 @@ class Stockfish {
   /// Creates a new Stockfish engine.
   ///
   /// Throws a [StateError] if a running instance already exists.
-  /// Owner must [dispose] it before a new instance can be created.
+  /// Owner must [quit] it before a new instance can be created.
   ///
   /// When [flavor] is [StockfishFlavor.latestNoNNUE], [smallNetPath] and [bigNetPath] must be provided.
   factory Stockfish({
@@ -47,10 +47,11 @@ class Stockfish {
 
     if (_instance != null) {
       switch (_instance!._state.value) {
+        case StockfishState.initial:
+          _instance!._cleanUp(0);
         case StockfishState.disposed:
         case StockfishState.error:
-        case StockfishState.initial:
-          _instance!.dispose();
+          break;
         default:
           throw StateError('Multiple running instances are not supported.');
       }
@@ -197,25 +198,37 @@ class Stockfish {
 
   /// Quits the C++ engine.
   ///
+  /// Returns a [Future] that completes when the engine has exited.
+  ///
   /// After calling this method, the instance cannot be used anymore.
-  void dispose() {
+  Future<void> quit() async {
     switch (_state.value) {
       case StockfishState.disposed:
       case StockfishState.error:
         return;
       case StockfishState.initial:
         _cleanUp(0);
+        return;
       case StockfishState.starting:
-        void onReadyOnce() {
-          if (_state.value == StockfishState.ready) {
-            stdin = 'quit';
-            _state.removeListener(onReadyOnce);
+      case StockfishState.ready:
+        final completer = Completer<void>();
+        void onStateChange() {
+          switch (_state.value) {
+            case StockfishState.ready:
+              stdin = 'quit';
+            case StockfishState.disposed:
+            case StockfishState.error:
+              _state.removeListener(onStateChange);
+              completer.complete();
+            default:
+              break;
           }
         }
-        _state.addListener(onReadyOnce);
-      case StockfishState.ready:
-        stdin = 'quit';
-        break;
+        _state.addListener(onStateChange);
+        if (_state.value == StockfishState.ready) {
+          stdin = 'quit';
+        }
+        return completer.future;
     }
   }
 
@@ -228,8 +241,6 @@ class Stockfish {
     _state._setValue(
       exitCode == 0 ? StockfishState.disposed : StockfishState.error,
     );
-
-    _instance = null;
   }
 }
 

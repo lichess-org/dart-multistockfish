@@ -54,14 +54,14 @@ stockfish.stdout.listen((line) {
 });
 ```
 
-### Dispose / Hot reload
+### Quit / Hot reload
 
-There are two active isolates when Stockfish engine is running. That interferes with Flutter's hot reload feature so you need to dispose it before attempting to reload.
+There are two active isolates when Stockfish engine is running. That interferes with Flutter's hot reload feature so you need to quit the engine before attempting to reload.
 
 ```dart
 // sends the UCI quit command
 stockfish.stdin = 'quit';
 
 // or even easier...
-stockfish.dispose();
+await stockfish.quit();
 ```
