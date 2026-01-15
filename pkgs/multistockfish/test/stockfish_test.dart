@@ -81,8 +81,8 @@ Future<T> runWithMockStockfish<T>(
       }
     },
     zoneValues: {
-      stockfishBindingsFactoryKey: (StockfishFlavor flavor) =>
-          controller.bindings,
+      stockfishBindingsFactoryKey:
+          (StockfishFlavor flavor) => controller.bindings,
       stockfishSpawnIsolatesKey: controller.spawnIsolates,
     },
   );
@@ -154,10 +154,10 @@ void main() {
         await Future.delayed(Duration.zero);
         expect(stockfish.state.value, StockfishState.starting);
 
-        // Call start again while first start is in progress
         final startFuture2 = stockfish.start();
 
-        // Both futures should be the same operation
+        expect(startFuture2, same(startFuture1));
+
         controller.emitStdout('Stockfish 16');
 
         // Both should complete successfully
@@ -166,28 +166,54 @@ void main() {
       });
     });
 
-    test('concurrent start calls all receive error on failure', () async {
-      final controller = MockEngineController();
+    test('concurrent start calls all receive error on failure', () {
+      fakeAsync((async) {
+        final controller = MockEngineController();
+        Object? error1;
+        Object? error2;
 
-      await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
+        runZoned(
+          () {
+            final stockfish = Stockfish.instance;
 
-        // Start the engine but don't await yet
-        final startFuture1 = stockfish.start();
+            // Start the engine (first caller)
+            final startFuture1 = stockfish.start();
+            startFuture1.catchError((e) {
+              error1 = e;
+              return null;
+            });
 
-        // Yield to let async code run
-        await Future.delayed(Duration.zero);
+            // Flush microtasks to let start() begin
+            async.flushMicrotasks();
 
-        // Call start again while first start is in progress
-        final startFuture2 = stockfish.start();
+            // Call start again while in progress (second caller)
+            final startFuture2 = stockfish.start();
+            startFuture2.catchError((e) {
+              error2 = e;
+              return null;
+            });
 
-        // Simulate timeout by not emitting stdout
-        // We can't easily test timeout here, but we can verify both futures
-        // are linked by completing the first one
-        controller.emitStdout('Stockfish 16');
+            // Both should be the same future
+            expect(startFuture2, same(startFuture1));
 
-        await Future.wait([startFuture1, startFuture2]);
-        expect(stockfish.state.value, StockfishState.ready);
+            // Don't emit stdout - simulate timeout
+            async.elapse(const Duration(seconds: 11));
+
+            // Both callers should receive the same error
+            expect(error1, isA<TimeoutException>());
+            expect(error2, isA<TimeoutException>());
+            expect(stockfish.state.value, StockfishState.error);
+
+            // Clean up
+            controller.exit(0);
+            async.flushMicrotasks();
+          },
+          zoneValues: {
+            stockfishBindingsFactoryKey:
+                (StockfishFlavor flavor) => controller.bindings,
+            stockfishSpawnIsolatesKey: controller.spawnIsolates,
+          },
+        );
       });
     });
 
@@ -270,8 +296,8 @@ void main() {
             expect(Stockfish.instance.state.value, StockfishState.error);
           },
           zoneValues: {
-            stockfishBindingsFactoryKey: (StockfishFlavor flavor) =>
-                controller.bindings,
+            stockfishBindingsFactoryKey:
+                (StockfishFlavor flavor) => controller.bindings,
             stockfishSpawnIsolatesKey: controller.spawnIsolates,
           },
         );
@@ -460,7 +486,9 @@ void main() {
         await Future.delayed(Duration.zero);
 
         expect(
-            lines, containsAll(['Stockfish 16', 'id name Stockfish', 'uciok']));
+          lines,
+          containsAll(['Stockfish 16', 'id name Stockfish', 'uciok']),
+        );
       });
     });
 
