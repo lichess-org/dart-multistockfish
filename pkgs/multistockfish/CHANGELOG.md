@@ -1,3 +1,26 @@
+## 0.4.0
+
+**Breaking changes:**
+
+- `Stockfish` is now a singleton. Use `Stockfish.instance`.
+- Configuration (`flavor`, `variant`, `bigNetPath`, `smallNetPath`) moved from the constructor to `start()`.
+- Removed `StockfishState.disposed`. After calling `quit()`, the state returns to `initial` and the engine can be restarted.
+- The `stdout` stream now persists across restarts - listeners don't need to re-subscribe.
+
+**Migration:**
+
+```dart
+// Before
+final stockfish = Stockfish(flavor: StockfishFlavor.variant, variant: 'atomic');
+// listen to stockfish state and wait for it to be ready
+stockfish.stdin = 'uci';
+
+// After
+await Stockfish.instance.start(flavor: StockfishFlavor.variant, variant: 'atomic');
+// stockfish is ready
+Stockfish.instance.stdin = 'uci';
+```
+
 ## 0.3.0
 
 - Add Stockfish 16 (embedded NNUE).

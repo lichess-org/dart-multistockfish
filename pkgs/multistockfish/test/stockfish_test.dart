@@ -75,72 +75,31 @@ Future<T> runWithMockStockfish<T>(
       try {
         return await body();
       } finally {
-        // Clean up any instance within the zone context by simulating engine exit
+        // Clean up by simulating engine exit to reset state
         controller.exit(0);
         await Future.delayed(Duration.zero);
       }
     },
     zoneValues: {
-      stockfishBindingsFactoryKey: (StockfishFlavor flavor) => controller.bindings,
+      stockfishBindingsFactoryKey: (StockfishFlavor flavor) =>
+          controller.bindings,
       stockfishSpawnIsolatesKey: controller.spawnIsolates,
     },
   );
 }
 
 void main() {
-  group('Stockfish.create', () {
-    test('creates instance when no previous instance exists', () async {
-      final controller = MockEngineController();
-
-      await runWithMockStockfish(controller, () async {
-        final stockfish = await Stockfish.create();
-
-        expect(stockfish, isNotNull);
-        expect(stockfish.state.value, StockfishState.initial);
-        expect(stockfish.flavor, StockfishFlavor.sf16);
-      });
+  group('Stockfish.instance', () {
+    test('is a singleton', () {
+      expect(Stockfish.instance, same(Stockfish.instance));
     });
 
-    test('creates instance with specified flavor', () async {
+    test('starts in initial state', () async {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = await Stockfish.create(
-          flavor: StockfishFlavor.variant,
-          variant: 'atomic',
-        );
-
-        expect(stockfish.flavor, StockfishFlavor.variant);
-        expect(stockfish.variant, 'atomic');
-      });
-    });
-
-    test('waits for running instance to quit before creating new one',
-        () async {
-      final controller = MockEngineController();
-
-      await runWithMockStockfish(controller, () async {
-        final first = await Stockfish.create();
-        final startFuture = first.start();
-
-        // Simulate engine starting
-        controller.emitStdout('Stockfish 16');
-        await startFuture;
-
-        expect(first.state.value, StockfishState.ready);
-
-        // Start creating a second instance (should wait for first to quit)
-        final secondFuture = Stockfish.create();
-
-        // Yield to let create() start and call quit() on the first instance
-        await Future.delayed(Duration.zero);
-
-        // Simulate engine quitting (this allows quit() to complete)
-        controller.exit(0);
-
-        final second = await secondFuture;
-        expect(second, isNot(same(first)));
-        expect(first.state.value, StockfishState.disposed);
+        expect(Stockfish.instance.state.value, StockfishState.initial);
+        expect(Stockfish.instance.flavor, StockfishFlavor.sf16);
       });
     });
   });
@@ -150,7 +109,7 @@ void main() {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = await Stockfish.create();
+        final stockfish = Stockfish.instance;
         final startFuture = stockfish.start();
 
         // Yield to let async code run
@@ -165,15 +124,47 @@ void main() {
       });
     });
 
-    test('throws StateError when already disposed', () async {
+    test('does nothing when already running', () async {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = await Stockfish.create();
-        await stockfish.quit();
+        final stockfish = Stockfish.instance;
+        final startFuture = stockfish.start();
 
-        expect(stockfish.state.value, StockfishState.disposed);
-        expect(() => stockfish.start(), throwsStateError);
+        controller.emitStdout('Stockfish 16');
+        await startFuture;
+
+        expect(stockfish.state.value, StockfishState.ready);
+
+        // Try to start again - should do nothing
+        await stockfish.start();
+        expect(stockfish.state.value, StockfishState.ready);
+      });
+    });
+
+    test('can restart after quit', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final stockfish = Stockfish.instance;
+
+        // First start
+        final startFuture1 = stockfish.start();
+        controller.emitStdout('Stockfish 16');
+        await startFuture1;
+        expect(stockfish.state.value, StockfishState.ready);
+
+        // Quit
+        final quitFuture = stockfish.quit();
+        controller.exit(0);
+        await quitFuture;
+        expect(stockfish.state.value, StockfishState.initial);
+
+        // Restart
+        final startFuture2 = stockfish.start();
+        controller.emitStdout('Stockfish 16');
+        await startFuture2;
+        expect(stockfish.state.value, StockfishState.ready);
       });
     });
 
@@ -182,11 +173,31 @@ void main() {
       controller.bindings.initReturnValue = 1;
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = await Stockfish.create();
+        final stockfish = Stockfish.instance;
         final startFuture = stockfish.start();
 
         await startFuture;
         expect(stockfish.state.value, StockfishState.error);
+      });
+    });
+
+    test('can restart after error', () async {
+      final controller = MockEngineController();
+      controller.bindings.initReturnValue = 1;
+
+      await runWithMockStockfish(controller, () async {
+        final stockfish = Stockfish.instance;
+
+        // First start fails
+        await stockfish.start();
+        expect(stockfish.state.value, StockfishState.error);
+
+        // Fix the error and restart
+        controller.bindings.initReturnValue = 0;
+        final startFuture = stockfish.start();
+        controller.emitStdout('Stockfish 16');
+        await startFuture;
+        expect(stockfish.state.value, StockfishState.ready);
       });
     });
 
@@ -197,19 +208,18 @@ void main() {
 
         runZoned(
           () {
-            Stockfish.create().then((stockfish) {
-              stockfish.start().catchError((e) {
-                caughtError = e;
-              });
+            Stockfish.instance.start().catchError((e) {
+              caughtError = e;
             });
 
-            // Flush microtasks to let create() and start() begin
+            // Flush microtasks to let start() begin
             async.flushMicrotasks();
 
             // Advance time past the 10 second timeout
             async.elapse(const Duration(seconds: 11));
 
             expect(caughtError, isA<TimeoutException>());
+            expect(Stockfish.instance.state.value, StockfishState.error);
           },
           zoneValues: {
             stockfishBindingsFactoryKey: (StockfishFlavor flavor) =>
@@ -220,15 +230,33 @@ void main() {
       });
     });
 
+    test('configures flavor correctly', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final stockfish = Stockfish.instance;
+        final startFuture = stockfish.start(
+          flavor: StockfishFlavor.variant,
+          variant: 'atomic',
+        );
+
+        controller.emitStdout('Fairy-Stockfish');
+        await startFuture;
+
+        expect(stockfish.flavor, StockfishFlavor.variant);
+        expect(stockfish.variant, 'atomic');
+      });
+    });
+
     test('sends UCI_Variant option for variant flavor', () async {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = await Stockfish.create(
+        final stockfish = Stockfish.instance;
+        final startFuture = stockfish.start(
           flavor: StockfishFlavor.variant,
           variant: 'atomic',
         );
-        final startFuture = stockfish.start();
 
         controller.emitStdout('Fairy-Stockfish');
 
@@ -245,12 +273,12 @@ void main() {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = await Stockfish.create(
+        final stockfish = Stockfish.instance;
+        final startFuture = stockfish.start(
           flavor: StockfishFlavor.latestNoNNUE,
           bigNetPath: '/path/to/big.nnue',
           smallNetPath: '/path/to/small.nnue',
         );
-        final startFuture = stockfish.start();
 
         controller.emitStdout('Stockfish 17');
 
@@ -269,37 +297,24 @@ void main() {
   });
 
   group('Stockfish.quit', () {
-    test('completes immediately when already disposed', () async {
+    test('completes immediately when already in initial state', () async {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = await Stockfish.create();
-        await stockfish.quit();
-        expect(stockfish.state.value, StockfishState.disposed);
+        final stockfish = Stockfish.instance;
+        expect(stockfish.state.value, StockfishState.initial);
 
         // Should complete immediately
         await stockfish.quit();
-        expect(stockfish.state.value, StockfishState.disposed);
-      });
-    });
-
-    test('cleans up when in initial state', () async {
-      final controller = MockEngineController();
-
-      await runWithMockStockfish(controller, () async {
-        final stockfish = await Stockfish.create();
         expect(stockfish.state.value, StockfishState.initial);
-
-        await stockfish.quit();
-        expect(stockfish.state.value, StockfishState.disposed);
       });
     });
 
-    test('sends quit command when ready', () async {
+    test('sends quit command when ready and returns to initial', () async {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = await Stockfish.create();
+        final stockfish = Stockfish.instance;
         final startFuture = stockfish.start();
 
         controller.emitStdout('Stockfish 16');
@@ -313,7 +328,7 @@ void main() {
         await quitFuture;
 
         expect(controller.bindings.stdinCalls, contains('quit\n'));
-        expect(stockfish.state.value, StockfishState.disposed);
+        expect(stockfish.state.value, StockfishState.initial);
       });
     });
 
@@ -321,7 +336,7 @@ void main() {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = await Stockfish.create();
+        final stockfish = Stockfish.instance;
         stockfish.start(); // Don't await
 
         await Future.delayed(Duration.zero);
@@ -343,7 +358,7 @@ void main() {
         controller.exit(0);
 
         await quitFuture;
-        expect(stockfish.state.value, StockfishState.disposed);
+        expect(stockfish.state.value, StockfishState.initial);
       });
     });
   });
@@ -353,7 +368,7 @@ void main() {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = await Stockfish.create();
+        final stockfish = Stockfish.instance;
 
         expect(() => stockfish.stdin = 'uci', throwsStateError);
       });
@@ -363,7 +378,7 @@ void main() {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = await Stockfish.create();
+        final stockfish = Stockfish.instance;
         final startFuture = stockfish.start();
 
         controller.emitStdout('Stockfish 16');
@@ -383,7 +398,7 @@ void main() {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = await Stockfish.create();
+        final stockfish = Stockfish.instance;
         final lines = <String>[];
         stockfish.stdout.listen(lines.add);
 
@@ -400,6 +415,34 @@ void main() {
             lines, containsAll(['Stockfish 16', 'id name Stockfish', 'uciok']));
       });
     });
+
+    test('persists across restarts', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final stockfish = Stockfish.instance;
+        final lines = <String>[];
+        stockfish.stdout.listen(lines.add);
+
+        // First session
+        final startFuture1 = stockfish.start();
+        controller.emitStdout('Session 1');
+        await startFuture1;
+
+        final quitFuture = stockfish.quit();
+        controller.exit(0);
+        await quitFuture;
+
+        // Second session - same listener should receive events
+        final startFuture2 = stockfish.start();
+        controller.emitStdout('Session 2');
+        await startFuture2;
+
+        await Future.delayed(Duration.zero);
+
+        expect(lines, containsAll(['Session 1', 'Session 2']));
+      });
+    });
   });
 
   group('Stockfish.state', () {
@@ -407,7 +450,7 @@ void main() {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = await Stockfish.create();
+        final stockfish = Stockfish.instance;
         final states = <StockfishState>[];
 
         stockfish.state.addListener(() {
@@ -425,7 +468,7 @@ void main() {
         expect(states, [
           StockfishState.starting,
           StockfishState.ready,
-          StockfishState.disposed,
+          StockfishState.initial,
         ]);
       });
     });

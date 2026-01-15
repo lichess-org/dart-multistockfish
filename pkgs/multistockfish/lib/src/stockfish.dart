@@ -24,55 +24,12 @@ const stockfishSpawnIsolatesKey = #_stockfishSpawnIsolates;
 ///
 /// The engine is started in a separate isolate.
 ///
-/// Different flavors of Stockfish can be used by specifying the [flavor].
+/// Different flavors of Stockfish can be used by specifying the [flavor] in [start].
+///
+/// This is a singleton - use [Stockfish.instance] to access it.
 class Stockfish {
-  /// Creates a new Stockfish engine.
-  ///
-  /// If another instance is currently running, it will be stopped first.
-  ///
-  /// When [flavor] is [StockfishFlavor.latestNoNNUE], [smallNetPath] and [bigNetPath] must be provided.
-  static Future<Stockfish> create({
-    /// The flavor of Stockfish to use.
-    StockfishFlavor flavor = StockfishFlavor.sf16,
-
-    /// The variant of chess to use. (Only for [StockfishFlavor.variant]).
-    ///
-    /// Example: '3check', 'crazyhouse', 'atomic', 'kingofthehill', 'antichess', 'horde', 'racingkings'.
-    String? variant,
-
-    /// Full path to the small net file for NNUE evaluation. Only used for [StockfishFlavor.latestNoNNUE].
-    String? smallNetPath,
-
-    /// Full path to the big net file for NNUE evaluation. Only used for [StockfishFlavor.latestNoNNUE].
-    String? bigNetPath,
-  }) async {
-    assert(
-      flavor != StockfishFlavor.latestNoNNUE ||
-          (smallNetPath != null && bigNetPath != null),
-      'NNUE evaluation requires smallNetPath and bigNetPath',
-    );
-
-    if (_instance != null) {
-      switch (_instance!._state.value) {
-        case StockfishState.initial:
-          _instance!._cleanUp(0);
-        case StockfishState.disposed:
-        case StockfishState.error:
-          break;
-        case StockfishState.starting:
-        case StockfishState.ready:
-          await _instance!.quit();
-      }
-    }
-
-    _instance = Stockfish._(
-      flavor,
-      variant: variant,
-      smallNetPath: smallNetPath,
-      bigNetPath: bigNetPath,
-    );
-    return _instance!;
-  }
+  /// The singleton instance of Stockfish.
+  static final Stockfish instance = Stockfish._();
 
   /// The default big NNUE file for evaluation of [StockfishFlavor.latestNoNNUE].
   static const latestBigNNUE = 'nn-1c0000000000.nnue';
@@ -80,39 +37,39 @@ class Stockfish {
   /// The default small NNUE file for evaluation of [StockfishFlavor.latestNoNNUE].
   static const latestSmallNNUE = 'nn-37f18f62d772.nnue';
 
-  static Stockfish? _instance;
+  StockfishFlavor _flavor = StockfishFlavor.sf16;
+  String? _variant;
+  String? _smallNetPath;
+  String? _bigNetPath;
 
-  /// The flavor of Stockfish.
-  final StockfishFlavor flavor;
+  /// The flavor of Stockfish currently configured.
+  StockfishFlavor get flavor => _flavor;
 
   /// The variant of chess. (Only for [StockfishFlavor.variant]).
-  final String? variant;
+  String? get variant => _variant;
 
   /// Full path to the small net file for NNUE evaluation.
-  final String? smallNetPath;
+  String? get smallNetPath => _smallNetPath;
 
   /// Full path to the big net file for NNUE evaluation.
-  final String? bigNetPath;
+  String? get bigNetPath => _bigNetPath;
 
-  StockfishBindings get _bindings => _getBindings(flavor);
+  StockfishBindings get _bindings => _getBindings(_flavor);
 
   final _state = _StockfishState();
   final _stdoutController = StreamController<String>.broadcast();
-  final _mainPort = ReceivePort();
-  final _stdoutPort = ReceivePort();
+  final _mainPort = ReceivePort('Stockfish main isolate port');
+  final _stdoutPort = ReceivePort('Stockfish stdout isolate port');
 
-  bool _initializationInProgress = false;
+  bool _startInProgress = false;
 
-  late StreamSubscription _mainSubscription;
-  late StreamSubscription _stdoutSubscription;
-
-  Stockfish._(this.flavor, {this.variant, this.smallNetPath, this.bigNetPath}) {
-    _mainSubscription = _mainPort.listen((message) {
+  Stockfish._() {
+    _mainPort.listen((message) {
       _logger.fine('The main isolate sent $message');
-      _cleanUp(message is int ? message : 1);
+      _onEngineExit(message is int ? message : 1);
     });
 
-    _stdoutSubscription = _stdoutPort.listen((message) {
+    _stdoutPort.listen((message) {
       if (message is String) {
         _logger.finest('[stdout] $message');
         _stdoutController.sink.add(message);
@@ -144,34 +101,58 @@ class Stockfish {
   ///
   /// Returns a [Future] that completes when the engine is ready to accept commands.
   ///
+  /// When [flavor] is [StockfishFlavor.latestNoNNUE], [smallNetPath] and [bigNetPath] must be provided.
+  ///
   /// Throws a [TimeoutException] if the engine does not become ready in time.
-  Future<void> start() async {
-    if (_initializationInProgress) {
-      _logger.warning('Initialization is already in progress.');
+  Future<void> start({
+    /// The flavor of Stockfish to use.
+    StockfishFlavor flavor = StockfishFlavor.sf16,
+
+    /// The variant of chess to use. (Only for [StockfishFlavor.variant]).
+    ///
+    /// Example: '3check', 'crazyhouse', 'atomic', 'kingofthehill', 'antichess', 'horde', 'racingkings'.
+    String? variant,
+
+    /// Full path to the small net file for NNUE evaluation. Only used for [StockfishFlavor.latestNoNNUE].
+    String? smallNetPath,
+
+    /// Full path to the big net file for NNUE evaluation. Only used for [StockfishFlavor.latestNoNNUE].
+    String? bigNetPath,
+  }) async {
+    assert(
+      flavor != StockfishFlavor.latestNoNNUE ||
+          (smallNetPath != null && bigNetPath != null),
+      'NNUE evaluation requires smallNetPath and bigNetPath',
+    );
+
+    if (_startInProgress) {
+      _logger.warning('Start is already in progress.');
       return;
     }
 
-    if (_state.value == StockfishState.disposed) {
-      throw StateError('Stockfish has been disposed.');
-    }
-
-    if (_state.value != StockfishState.initial) {
-      _logger.warning('Stockfish has already been started.');
+    if (_state.value != StockfishState.initial &&
+        _state.value != StockfishState.error) {
+      _logger.warning('Stockfish is already running.');
       return;
     }
 
-    _initializationInProgress = true;
+    _flavor = flavor;
+    _variant = variant;
+    _smallNetPath = smallNetPath;
+    _bigNetPath = bigNetPath;
+
+    _startInProgress = true;
 
     try {
       final success = await _spawnIsolates(
         _mainPort.sendPort,
         _stdoutPort.sendPort,
-        flavor,
+        _flavor,
       );
 
       if (!success) {
         _logger.severe('Failed to spawn isolates');
-        _cleanUp(1);
+        _state._setValue(StockfishState.error);
         return;
       }
 
@@ -184,26 +165,26 @@ class Stockfish {
 
       _state._setValue(StockfishState.ready);
 
-      if (flavor == StockfishFlavor.variant && variant != null) {
-        stdin = 'setoption name UCI_Variant value $variant';
+      if (_flavor == StockfishFlavor.variant && _variant != null) {
+        stdin = 'setoption name UCI_Variant value $_variant';
       }
 
-      if (flavor == StockfishFlavor.latestNoNNUE &&
-          bigNetPath != null &&
-          smallNetPath != null) {
-        stdin = 'setoption name EvalFile value $bigNetPath';
-        stdin = 'setoption name EvalFileSmall value $smallNetPath';
+      if (_flavor == StockfishFlavor.latestNoNNUE &&
+          _bigNetPath != null &&
+          _smallNetPath != null) {
+        stdin = 'setoption name EvalFile value $_bigNetPath';
+        stdin = 'setoption name EvalFileSmall value $_smallNetPath';
       }
     } on TimeoutException {
-      _cleanUp(1);
+      _state._setValue(StockfishState.error);
       _logger.severe('The engine did not become ready in time.');
       rethrow;
     } catch (error) {
-      _cleanUp(1);
+      _state._setValue(StockfishState.error);
       _logger.severe('The engine failed to start: $error.');
       rethrow;
     } finally {
-      _initializationInProgress = false;
+      _startInProgress = false;
     }
   }
 
@@ -211,14 +192,11 @@ class Stockfish {
   ///
   /// Returns a [Future] that completes when the engine has exited.
   ///
-  /// After calling this method, the instance cannot be used anymore.
+  /// After quitting, the engine can be started again with [start].
   Future<void> quit() async {
     switch (_state.value) {
-      case StockfishState.disposed:
-      case StockfishState.error:
-        return;
       case StockfishState.initial:
-        _cleanUp(0);
+      case StockfishState.error:
         return;
       case StockfishState.starting:
       case StockfishState.ready:
@@ -227,7 +205,7 @@ class Stockfish {
           switch (_state.value) {
             case StockfishState.ready:
               stdin = 'quit';
-            case StockfishState.disposed:
+            case StockfishState.initial:
             case StockfishState.error:
               _state.removeListener(onStateChange);
               completer.complete();
@@ -243,14 +221,9 @@ class Stockfish {
     }
   }
 
-  void _cleanUp(int exitCode) {
-    _stdoutController.close();
-
-    _mainSubscription.cancel();
-    _stdoutSubscription.cancel();
-
+  void _onEngineExit(int exitCode) {
     _state._setValue(
-      exitCode == 0 ? StockfishState.disposed : StockfishState.error,
+      exitCode == 0 ? StockfishState.initial : StockfishState.error,
     );
   }
 }

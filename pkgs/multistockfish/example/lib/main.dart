@@ -40,7 +40,7 @@ class MyApp extends StatefulWidget {
 class _AppState extends State<MyApp> {
   Directory? appSupportDirectory;
   StockfishFlavor flavor = StockfishFlavor.sf16;
-  Stockfish? stockfish;
+  final stockfish = Stockfish.instance;
 
   final Completer<NNUEFiles> _nnueFilesCompleter = Completer<NNUEFiles>();
 
@@ -53,6 +53,8 @@ class _AppState extends State<MyApp> {
   ValueListenable<double> get smallNetProgress => _smallNetProgress;
 
   String? variant = '3check';
+
+  NNUEFiles? _nnueFiles;
 
   static const _variants = [
     '3check',
@@ -67,22 +69,21 @@ class _AppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
-    _initStockfish();
     _fetchNNUEFiles();
   }
 
-  Future<void> _initStockfish({
-    NNUEFiles? nnueFiles,
-  }) async {
-    final instance = await Stockfish.create(
+  Future<void> _startStockfish() async {
+    await stockfish.start(
       flavor: flavor,
       variant: variant,
-      bigNetPath: nnueFiles?.bigNetPath,
-      smallNetPath: nnueFiles?.smallNetPath,
+      bigNetPath: _nnueFiles?.bigNetPath,
+      smallNetPath: _nnueFiles?.smallNetPath,
     );
-    if (mounted) {
-      setState(() => stockfish = instance);
-    }
+  }
+
+  Future<void> _restartStockfish() async {
+    await stockfish.quit();
+    await _startStockfish();
   }
 
   Future<void> _fetchNNUEFiles() async {
@@ -90,10 +91,8 @@ class _AppState extends State<MyApp> {
     final bigNet = File('${appSupportDirectory!.path}/$_kBigNet');
     final smallNet = File('${appSupportDirectory!.path}/$_kSmallNet');
     if (await bigNet.exists() && await smallNet.exists()) {
-      _nnueFilesCompleter.complete((
-        bigNetPath: bigNet.path,
-        smallNetPath: smallNet.path,
-      ));
+      _nnueFiles = (bigNetPath: bigNet.path, smallNetPath: smallNet.path);
+      _nnueFilesCompleter.complete(_nnueFiles);
       return;
     }
 
@@ -127,10 +126,8 @@ class _AppState extends State<MyApp> {
       debugPrint('Failed to download NNUE files: $e');
     }
 
-    _nnueFilesCompleter.complete((
-      bigNetPath: bigNet.path,
-      smallNetPath: smallNet.path,
-    ));
+    _nnueFiles = (bigNetPath: bigNet.path, smallNetPath: smallNet.path);
+    _nnueFilesCompleter.complete(_nnueFiles);
   }
 
   @override
@@ -183,10 +180,10 @@ class _AppState extends State<MyApp> {
                   padding: const EdgeInsets.all(8.0),
                   child: DropdownButton<StockfishFlavor>(
                     onChanged: (value) {
-                      flavor = value!;
-                      _initStockfish(
-                        nnueFiles: snapshot.hasData ? snapshot.requireData : null,
-                      );
+                      setState(() => flavor = value!);
+                      if (stockfish.state.value == StockfishState.ready) {
+                        _restartStockfish();
+                      }
                     },
                     value: flavor,
                     items: StockfishFlavor.values
@@ -209,10 +206,10 @@ class _AppState extends State<MyApp> {
                     padding: const EdgeInsets.all(8.0),
                     child: DropdownButton<String>(
                       onChanged: (value) {
-                        variant = value!;
-                        _initStockfish(
-                          nnueFiles: snapshot.hasData ? snapshot.requireData : null,
-                        );
+                        setState(() => variant = value!);
+                        if (stockfish.state.value == StockfishState.ready) {
+                          _restartStockfish();
+                        }
                       },
                       value: variant,
                       items: _variants
@@ -225,86 +222,66 @@ class _AppState extends State<MyApp> {
                           .toList(growable: false),
                     ),
                   ),
-                if (stockfish != null) ...[
-                  Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: AnimatedBuilder(
-                      animation: stockfish!.state,
-                      builder:
-                          (_, __) => Text(
-                            'stockfish.state=${stockfish!.state.value}',
-                            key: const ValueKey('stockfish.state'),
-                          ),
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: AnimatedBuilder(
+                    animation: stockfish.state,
+                    builder:
+                        (_, __) => Text(
+                          'stockfish.state=${stockfish.state.value}',
+                          key: const ValueKey('stockfish.state'),
+                        ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: AnimatedBuilder(
+                    animation: stockfish.state,
+                    builder:
+                        (_, __) => ElevatedButton(
+                          onPressed:
+                              stockfish.state.value == StockfishState.initial ||
+                                      stockfish.state.value ==
+                                          StockfishState.error
+                                  ? _startStockfish
+                                  : null,
+                          child: const Text('Start Stockfish'),
+                        ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: TextField(
+                    autocorrect: false,
+                    decoration: const InputDecoration(
+                      labelText: 'Custom UCI command',
+                      hintText: 'go infinite',
                     ),
+                    onSubmitted: (value) => stockfish.stdin = value,
+                    textInputAction: TextInputAction.send,
                   ),
-                  Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: AnimatedBuilder(
-                      animation: stockfish!.state,
-                      builder:
-                          (_, __) => ElevatedButton(
-                            onPressed:
-                                stockfish!.state.value == StockfishState.initial
-                                    ? () {
-                                      stockfish!.start();
-                                    }
-                                    : null,
-                            child: const Text('Start Stockfish instance'),
+                ),
+                Wrap(
+                  children: [
+                        'd',
+                        'isready',
+                        'bench',
+                        'go movetime 3000',
+                        'stop',
+                        'quit',
+                      ]
+                      .map(
+                        (command) => Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: ElevatedButton(
+                            onPressed: () => stockfish.stdin = command,
+                            child: Text(command),
                           ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: AnimatedBuilder(
-                      animation: stockfish!.state,
-                      builder:
-                          (_, __) => ElevatedButton(
-                            onPressed:
-                                stockfish!.state.value == StockfishState.disposed
-                                    ? () => _initStockfish()
-                                    : null,
-                            child: const Text('Reset Stockfish instance'),
-                          ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: TextField(
-                      autocorrect: false,
-                      decoration: const InputDecoration(
-                        labelText: 'Custom UCI command',
-                        hintText: 'go infinite',
-                      ),
-                      onSubmitted: (value) => stockfish!.stdin = value,
-                      textInputAction: TextInputAction.send,
-                    ),
-                  ),
-                  Wrap(
-                    children: [
-                          'd',
-                          'isready',
-                          'bench',
-                          'go movetime 3000',
-                          'stop',
-                          'quit',
-                        ]
-                        .map(
-                          (command) => Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: ElevatedButton(
-                              onPressed: () => stockfish!.stdin = command,
-                              child: Text(command),
-                            ),
-                          ),
-                        )
-                        .toList(growable: false),
-                  ),
-                  Expanded(child: OutputWidget(stockfish!.stdout)),
-                ] else
-                  const Padding(
-                    padding: EdgeInsets.all(8.0),
-                    child: CircularProgressIndicator(),
-                  ),
+                        ),
+                      )
+                      .toList(growable: false),
+                ),
+                Expanded(child: OutputWidget(stockfish.stdout)),
               ],
             );
           },
