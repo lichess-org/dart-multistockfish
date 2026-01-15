@@ -9,6 +9,6 @@ enum StockfishState {
   /// Engine is running, ready to receive commands.
   ready,
 
-  /// An error occured, engine could not start.
+  /// An error occurred, engine could not start.
   error,
 }
