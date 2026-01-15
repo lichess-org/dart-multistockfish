@@ -126,14 +126,17 @@ class Stockfish {
     );
 
     if (_startInProgress) {
-      _logger.warning('Start is already in progress.');
       return;
     }
 
     if (_state.value != StockfishState.initial &&
         _state.value != StockfishState.error) {
-      _logger.warning('Stockfish is already running.');
-      return;
+      _logger.warning(
+        'Attempt to start Stockfish while it is already running.',
+      );
+      throw StateError(
+        'Stockfish is already running. Call quit() before starting again.',
+      );
     }
 
     _flavor = flavor;

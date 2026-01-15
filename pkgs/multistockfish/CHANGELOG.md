@@ -5,6 +5,7 @@
 - `Stockfish` is now a singleton. Use `Stockfish.instance`.
 - Configuration (`flavor`, `variant`, `bigNetPath`, `smallNetPath`) moved from the constructor to `start()`.
 - Removed `StockfishState.disposed`. After calling `quit()`, the state returns to `initial` and the engine can be restarted.
+- `start()` throws a `StateError` if the engine is already running. Call `quit()` first.
 - The `stdout` stream now persists across restarts - listeners don't need to re-subscribe.
 
 **Migration:**

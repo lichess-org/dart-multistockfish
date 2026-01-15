@@ -124,7 +124,7 @@ void main() {
       });
     });
 
-    test('does nothing when already running', () async {
+    test('throws StateError when already running', () async {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
@@ -136,9 +136,8 @@ void main() {
 
         expect(stockfish.state.value, StockfishState.ready);
 
-        // Try to start again - should do nothing
-        await stockfish.start();
-        expect(stockfish.state.value, StockfishState.ready);
+        // Try to start again - should throw
+        expect(() => stockfish.start(), throwsStateError);
       });
     });
 
