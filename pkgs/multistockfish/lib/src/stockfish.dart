@@ -20,6 +20,9 @@ const stockfishBindingsFactoryKey = #_stockfishBindingsFactory;
 @visibleForTesting
 const stockfishSpawnIsolatesKey = #_stockfishSpawnIsolates;
 
+/// Timeout duration to consider engine start failed.
+const kStartTimeout = Duration(seconds: 5);
+
 /// A Dart wrapper around the Stockfish chess engine.
 ///
 /// The engine is started in a separate isolate.
@@ -165,12 +168,12 @@ class Stockfish {
 
     try {
       // Wait for the engine to be ready by checking the first non-empty line (usually its name).
-      await stdout
-          .firstWhere((line) => line.isNotEmpty)
-          .timeout(const Duration(seconds: 10));
+      await stdout.firstWhere((line) => line.isNotEmpty).timeout(kStartTimeout);
     } on TimeoutException {
       _state._setValue(StockfishState.error);
-      _logger.severe('The engine did not become ready in time.');
+      _logger.severe(
+        'The engine did not become ready in time (${kStartTimeout.inSeconds}s).',
+      );
       rethrow;
     }
 
@@ -222,6 +225,7 @@ class Stockfish {
           break;
       }
     }
+
     _state.addListener(onStateChange);
     if (_state.value == StockfishState.ready) {
       stdin = 'quit';

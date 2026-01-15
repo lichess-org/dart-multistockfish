@@ -197,7 +197,7 @@ void main() {
           expect(startFuture2, same(startFuture1));
 
           // Don't emit stdout - simulate timeout
-          async.elapse(const Duration(seconds: 11));
+          async.elapse(kStartTimeout + const Duration(seconds: 1));
 
           // Both callers should receive the same error
           expect(error1, isA<TimeoutException>());
@@ -285,7 +285,7 @@ void main() {
           async.flushMicrotasks();
 
           // Advance time past the 10 second timeout
-          async.elapse(const Duration(seconds: 11));
+          async.elapse(kStartTimeout + const Duration(seconds: 1));
 
           expect(caughtError, isA<TimeoutException>());
           expect(Stockfish.instance.state.value, StockfishState.error);
