@@ -196,6 +196,8 @@ class Stockfish {
   /// Returns a [Future] that completes when the engine has exited.
   ///
   /// After quitting, the engine can be started again with [start].
+  ///
+  /// It is safe to call [quit] multiple times; subsequent calls will wait for the first to complete.
   Future<void> quit() {
     if (_pendingQuit != null) {
       return _pendingQuit!;
