@@ -296,7 +296,7 @@ StockfishBindings _getBindings(StockfishFlavor flavor) {
 }
 
 void _isolateMain(_IsolateArgs args) {
-  final (mainPort, flavor) = (args.sendPort, args.flavor);
+  final (mainPort, flavor) = args;
   final bindings = _getBindings(flavor);
   final exitCode = bindings.main();
   mainPort.send(exitCode);
@@ -305,7 +305,7 @@ void _isolateMain(_IsolateArgs args) {
 }
 
 void _isolateStdout(_IsolateArgs args) {
-  final (stdoutPort, flavor) = (args.sendPort, args.flavor);
+  final (stdoutPort, flavor) = args;
   final bindings = _getBindings(flavor);
 
   String previous = '';
@@ -352,22 +352,20 @@ Future<bool> _spawnIsolates(
   }
 
   try {
-    await Isolate.spawn(
-      _isolateStdout,
-      _IsolateArgs(stdoutPort, flavor),
-      debugName: 'stockfish stdout isolate',
-    );
+    await Isolate.spawn(_isolateStdout, (
+      stdoutPort,
+      flavor,
+    ), debugName: 'Stockfish stdout isolate');
   } catch (error) {
     _logger.severe('Failed to spawn stdout isolate: $error');
     return false;
   }
 
   try {
-    await Isolate.spawn(
-      _isolateMain,
-      _IsolateArgs(mainPort, flavor),
-      debugName: 'stockfish main isolate',
-    );
+    await Isolate.spawn(_isolateMain, (
+      mainPort,
+      flavor,
+    ), debugName: 'Stockfish main isolate');
   } catch (error) {
     _logger.severe('Failed to spawn main isolate: $error');
     return false;
@@ -376,12 +374,7 @@ Future<bool> _spawnIsolates(
   return true;
 }
 
-class _IsolateArgs {
-  final SendPort sendPort;
-  final StockfishFlavor flavor;
-
-  const _IsolateArgs(this.sendPort, this.flavor);
-}
+typedef _IsolateArgs = (SendPort sendPort, StockfishFlavor flavor);
 
 class _StockfishState extends ChangeNotifier
     implements ValueListenable<StockfishState> {
