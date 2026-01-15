@@ -68,7 +68,7 @@ class MockEngineController {
 /// Ensures cleanup happens within the zone context.
 Future<T> runWithMockStockfish<T>(
   MockEngineController controller,
-  Future<T> Function() body,
+  FutureOr<T> Function() body,
 ) {
   return runZoned(
     () async {
@@ -166,54 +166,48 @@ void main() {
       });
     });
 
-    test('concurrent start calls all receive error on failure', () {
-      fakeAsync((async) {
-        final controller = MockEngineController();
-        Object? error1;
-        Object? error2;
+    test('concurrent start calls all receive error on failure', () async {
+      final controller = MockEngineController();
 
-        runZoned(
-          () {
-            final stockfish = Stockfish.instance;
+      await runWithMockStockfish(controller, () {
+        fakeAsync((async) {
+          Object? error1;
+          Object? error2;
 
-            // Start the engine (first caller)
-            final startFuture1 = stockfish.start();
-            startFuture1.catchError((e) {
-              error1 = e;
-              return null;
-            });
+          final stockfish = Stockfish.instance;
 
-            // Flush microtasks to let start() begin
-            async.flushMicrotasks();
+          // Start the engine (first caller)
+          final startFuture1 = stockfish.start();
+          startFuture1.catchError((e) {
+            error1 = e;
+            return null;
+          });
 
-            // Call start again while in progress (second caller)
-            final startFuture2 = stockfish.start();
-            startFuture2.catchError((e) {
-              error2 = e;
-              return null;
-            });
+          // Flush microtasks to let start() begin
+          async.flushMicrotasks();
 
-            // Both should be the same future
-            expect(startFuture2, same(startFuture1));
+          // Call start again while in progress (second caller)
+          final startFuture2 = stockfish.start();
+          startFuture2.catchError((e) {
+            error2 = e;
+            return null;
+          });
 
-            // Don't emit stdout - simulate timeout
-            async.elapse(const Duration(seconds: 11));
+          // Both should be the same future
+          expect(startFuture2, same(startFuture1));
 
-            // Both callers should receive the same error
-            expect(error1, isA<TimeoutException>());
-            expect(error2, isA<TimeoutException>());
-            expect(stockfish.state.value, StockfishState.error);
+          // Don't emit stdout - simulate timeout
+          async.elapse(const Duration(seconds: 11));
 
-            // Clean up
-            controller.exit(0);
-            async.flushMicrotasks();
-          },
-          zoneValues: {
-            stockfishBindingsFactoryKey:
-                (StockfishFlavor flavor) => controller.bindings,
-            stockfishSpawnIsolatesKey: controller.spawnIsolates,
-          },
-        );
+          // Both callers should receive the same error
+          expect(error1, isA<TimeoutException>());
+          expect(error2, isA<TimeoutException>());
+          expect(stockfish.state.value, StockfishState.error);
+
+          // Clean up
+          controller.exit(0);
+          async.flushMicrotasks();
+        });
       });
     });
 
@@ -275,32 +269,31 @@ void main() {
       });
     });
 
-    test('throws TimeoutException when engine does not respond', () {
-      fakeAsync((async) {
-        final controller = MockEngineController();
-        Object? caughtError;
+    test('throws TimeoutException when engine does not respond', () async {
+      final controller = MockEngineController();
 
-        runZoned(
-          () {
-            Stockfish.instance.start().catchError((e) {
-              caughtError = e;
-            });
+      await runWithMockStockfish(controller, () {
+        fakeAsync((async) {
+          Object? caughtError;
 
-            // Flush microtasks to let start() begin
-            async.flushMicrotasks();
+          Stockfish.instance.start().catchError((e) {
+            caughtError = e;
+            return null;
+          });
 
-            // Advance time past the 10 second timeout
-            async.elapse(const Duration(seconds: 11));
+          // Flush microtasks to let start() begin
+          async.flushMicrotasks();
 
-            expect(caughtError, isA<TimeoutException>());
-            expect(Stockfish.instance.state.value, StockfishState.error);
-          },
-          zoneValues: {
-            stockfishBindingsFactoryKey:
-                (StockfishFlavor flavor) => controller.bindings,
-            stockfishSpawnIsolatesKey: controller.spawnIsolates,
-          },
-        );
+          // Advance time past the 10 second timeout
+          async.elapse(const Duration(seconds: 11));
+
+          expect(caughtError, isA<TimeoutException>());
+          expect(Stockfish.instance.state.value, StockfishState.error);
+
+          // Clean up
+          controller.exit(0);
+          async.flushMicrotasks();
+        });
       });
     });
 
