@@ -36,10 +36,10 @@ This is a Dart workspace monorepo with the following structure:
 - **pkgs/multistockfish_variant**: Native C++ library for Fairy-Stockfish (variants)
 
 ### Key Files in pkgs/multistockfish/lib/
-- `src/stockfish.dart`: Main `Stockfish` class - singleton pattern, manages isolates for engine communication
+- `src/stockfish.dart`: Main `Stockfish` class - singleton, manages isolates for engine communication
 - `src/bindings.dart`: FFI bindings to native C++ libraries
 - `src/stockfish_flavor.dart`: Enum defining engine variants
-- `src/stockfish_state.dart`: Engine lifecycle states (initial, starting, ready, disposed, error)
+- `src/stockfish_state.dart`: Engine lifecycle states (initial, starting, ready, error)
 
 ### Engine Communication Pattern
 The engine runs in separate isolates:
@@ -48,10 +48,12 @@ The engine runs in separate isolates:
 3. Commands sent via `stockfish_stdin_write()` from any thread
 
 ### Important Constraints
-- Only one Stockfish instance can run at a time (singleton pattern)
-- Use `await Stockfish.create()` to create an instance - if another is running, it will be stopped first
-- Engine start is deferred - must call `start()` after creation
-- For `latestNoNNUE` flavor, NNUE files must be downloaded and paths provided
+- `Stockfish` is a singleton - use `Stockfish.instance`
+- Call `start()` to run the engine with configuration (flavor, variant, NNUE paths)
+- `start()` throws `StateError` if engine is already running - call `quit()` first
+- After `quit()`, state returns to `initial` and engine can be restarted
+- The `stdout` stream persists across restarts - listeners don't need to re-subscribe
+- For `latestNoNNUE` flavor, NNUE files must be downloaded and paths provided to `start()`
 
 ### Native Plugin Build
 Each native package uses CMakeLists.txt (Android) and podspec (iOS) to build the Stockfish C++ source. The ios/ directories contain the full Stockfish source code.
