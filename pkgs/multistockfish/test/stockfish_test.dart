@@ -575,5 +575,42 @@ void main() {
         ]);
       });
     });
+
+    test('transitions to error state on engine crash and can restart', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final stockfish = Stockfish.instance;
+        final states = <StockfishState>[];
+
+        stockfish.state.addListener(() {
+          states.add(stockfish.state.value);
+        });
+
+        // Start the engine
+        final startFuture = stockfish.start();
+        controller.emitStdout('Stockfish 16');
+        await startFuture;
+        expect(stockfish.state.value, StockfishState.ready);
+
+        // Simulate engine crash (non-zero exit code)
+        controller.exit(1);
+        await Future.delayed(Duration.zero);
+
+        expect(stockfish.state.value, StockfishState.error);
+        expect(states, [
+          StockfishState.starting,
+          StockfishState.ready,
+          StockfishState.error,
+        ]);
+
+        // Should be able to restart after crash
+        final restartFuture = stockfish.start();
+        controller.emitStdout('Stockfish 16');
+        await restartFuture;
+
+        expect(stockfish.state.value, StockfishState.ready);
+      });
+    });
   });
 }
