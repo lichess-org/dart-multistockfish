@@ -62,6 +62,7 @@ class Stockfish {
   final _stdoutPort = ReceivePort('Stockfish stdout isolate port');
 
   Future<void>? _pendingStart;
+  Future<void>? _pendingQuit;
 
   Stockfish._() {
     _mainPort.listen((message) {
@@ -192,32 +193,40 @@ class Stockfish {
   /// Returns a [Future] that completes when the engine has exited.
   ///
   /// After quitting, the engine can be started again with [start].
-  Future<void> quit() async {
+  Future<void> quit() {
+    if (_pendingQuit != null) {
+      return _pendingQuit!;
+    }
+
     switch (_state.value) {
       case StockfishState.initial:
       case StockfishState.error:
-        return;
+        return Future.value();
       case StockfishState.starting:
       case StockfishState.ready:
-        final completer = Completer<void>();
-        void onStateChange() {
-          switch (_state.value) {
-            case StockfishState.ready:
-              stdin = 'quit';
-            case StockfishState.initial:
-            case StockfishState.error:
-              _state.removeListener(onStateChange);
-              completer.complete();
-            default:
-              break;
-          }
-        }
-        _state.addListener(onStateChange);
-        if (_state.value == StockfishState.ready) {
-          stdin = 'quit';
-        }
-        return completer.future;
+        return _pendingQuit = _doQuit().whenComplete(() => _pendingQuit = null);
     }
+  }
+
+  Future<void> _doQuit() {
+    final completer = Completer<void>();
+    void onStateChange() {
+      switch (_state.value) {
+        case StockfishState.ready:
+          stdin = 'quit';
+        case StockfishState.initial:
+        case StockfishState.error:
+          _state.removeListener(onStateChange);
+          completer.complete();
+        default:
+          break;
+      }
+    }
+    _state.addListener(onStateChange);
+    if (_state.value == StockfishState.ready) {
+      stdin = 'quit';
+    }
+    return completer.future;
   }
 
   void _onEngineExit(int exitCode) {

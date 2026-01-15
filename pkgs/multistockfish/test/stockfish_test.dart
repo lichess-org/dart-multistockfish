@@ -435,6 +435,40 @@ void main() {
         expect(stockfish.state.value, StockfishState.initial);
       });
     });
+
+    test('returns same Future when quit is already in progress', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final stockfish = Stockfish.instance;
+        final startFuture = stockfish.start();
+
+        controller.emitStdout('Stockfish 16');
+        await startFuture;
+
+        // Call quit multiple times concurrently
+        final quitFuture1 = stockfish.quit();
+        final quitFuture2 = stockfish.quit();
+        final quitFuture3 = stockfish.quit();
+
+        // All should be the same future
+        expect(quitFuture2, same(quitFuture1));
+        expect(quitFuture3, same(quitFuture1));
+
+        // Only one quit command should be sent
+        expect(
+          controller.bindings.stdinCalls.where((c) => c == 'quit\n').length,
+          equals(1),
+        );
+
+        // Simulate engine exiting
+        controller.exit(0);
+
+        // All futures should complete
+        await Future.wait([quitFuture1, quitFuture2, quitFuture3]);
+        expect(stockfish.state.value, StockfishState.initial);
+      });
+    });
   });
 
   group('Stockfish.stdin', () {
