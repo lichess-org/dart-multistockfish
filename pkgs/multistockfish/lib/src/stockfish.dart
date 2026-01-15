@@ -61,7 +61,7 @@ class Stockfish {
   final _mainPort = ReceivePort('Stockfish main isolate port');
   final _stdoutPort = ReceivePort('Stockfish stdout isolate port');
 
-  bool _startInProgress = false;
+  Future<void>? _pendingStart;
 
   Stockfish._() {
     _mainPort.listen((message) {
@@ -118,15 +118,15 @@ class Stockfish {
 
     /// Full path to the big net file for NNUE evaluation. Only used for [StockfishFlavor.latestNoNNUE].
     String? bigNetPath,
-  }) async {
+  }) {
     assert(
       flavor != StockfishFlavor.latestNoNNUE ||
           (smallNetPath != null && bigNetPath != null),
       'NNUE evaluation requires smallNetPath and bigNetPath',
     );
 
-    if (_startInProgress) {
-      return;
+    if (_pendingStart != null) {
+      return _pendingStart!;
     }
 
     if (_state.value != StockfishState.initial &&
@@ -144,50 +144,46 @@ class Stockfish {
     _smallNetPath = smallNetPath;
     _bigNetPath = bigNetPath;
 
-    _startInProgress = true;
+    return _pendingStart = _doStart().whenComplete(() => _pendingStart = null);
+  }
+
+  Future<void> _doStart() async {
+    final success = await _spawnIsolates(
+      _mainPort.sendPort,
+      _stdoutPort.sendPort,
+      _flavor,
+    );
+
+    if (!success) {
+      _logger.severe('Failed to spawn isolates');
+      _state._setValue(StockfishState.error);
+      throw Exception('Failed to spawn isolates');
+    }
+
+    _state._setValue(StockfishState.starting);
 
     try {
-      final success = await _spawnIsolates(
-        _mainPort.sendPort,
-        _stdoutPort.sendPort,
-        _flavor,
-      );
-
-      if (!success) {
-        _logger.severe('Failed to spawn isolates');
-        _state._setValue(StockfishState.error);
-        return;
-      }
-
-      _state._setValue(StockfishState.starting);
-
       // Wait for the engine to be ready by checking the first non-empty line (usually its name).
       await stdout
           .firstWhere((line) => line.isNotEmpty)
           .timeout(const Duration(seconds: 10));
-
-      _state._setValue(StockfishState.ready);
-
-      if (_flavor == StockfishFlavor.variant && _variant != null) {
-        stdin = 'setoption name UCI_Variant value $_variant';
-      }
-
-      if (_flavor == StockfishFlavor.latestNoNNUE &&
-          _bigNetPath != null &&
-          _smallNetPath != null) {
-        stdin = 'setoption name EvalFile value $_bigNetPath';
-        stdin = 'setoption name EvalFileSmall value $_smallNetPath';
-      }
     } on TimeoutException {
       _state._setValue(StockfishState.error);
       _logger.severe('The engine did not become ready in time.');
       rethrow;
-    } catch (error) {
-      _state._setValue(StockfishState.error);
-      _logger.severe('The engine failed to start: $error.');
-      rethrow;
-    } finally {
-      _startInProgress = false;
+    }
+
+    _state._setValue(StockfishState.ready);
+
+    if (_flavor == StockfishFlavor.variant && _variant != null) {
+      stdin = 'setoption name UCI_Variant value $_variant';
+    }
+
+    if (_flavor == StockfishFlavor.latestNoNNUE &&
+        _bigNetPath != null &&
+        _smallNetPath != null) {
+      stdin = 'setoption name EvalFile value $_bigNetPath';
+      stdin = 'setoption name EvalFileSmall value $_smallNetPath';
     }
   }
 
