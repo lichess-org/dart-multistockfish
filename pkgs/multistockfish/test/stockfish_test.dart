@@ -35,6 +35,17 @@ class MockEngineController {
   SendPort? _mainPort;
   SendPort? _stdoutPort;
 
+  /// Simulates the engine starting up by writing its version to stdout
+  /// and responding to the "uci" command with "uciok".
+  Future<void> simulateStartup({String engineName = 'Stockfish 16'}) async {
+    emitStdout(engineName);
+
+    // Yield so that `Stockfish.instance.start()` writes the "uci" command to stdin
+    await Future.delayed(Duration.zero);
+    expect(bindings.stdinCalls.lastOrNull, 'uci\n');
+    emitStdout('uciok');
+  }
+
   /// Simulates the engine outputting a line to stdout.
   void emitStdout(String line) {
     _stdoutPort?.send(line);
@@ -116,8 +127,7 @@ void main() {
         await Future.delayed(Duration.zero);
         expect(stockfish.state.value, StockfishState.starting);
 
-        // Simulate engine outputting its name
-        controller.emitStdout('Stockfish 16');
+        await controller.simulateStartup();
 
         await startFuture;
         expect(stockfish.state.value, StockfishState.ready);
@@ -131,7 +141,8 @@ void main() {
         final stockfish = Stockfish.instance;
         final startFuture = stockfish.start();
 
-        controller.emitStdout('Stockfish 16');
+        controller.simulateStartup();
+
         await startFuture;
 
         expect(stockfish.state.value, StockfishState.ready);
@@ -158,7 +169,7 @@ void main() {
 
         expect(startFuture2, same(startFuture1));
 
-        controller.emitStdout('Stockfish 16');
+        controller.simulateStartup();
 
         // Both should complete successfully
         await Future.wait([startFuture1, startFuture2]);
@@ -219,7 +230,7 @@ void main() {
 
         // First start
         final startFuture1 = stockfish.start();
-        controller.emitStdout('Stockfish 16');
+        controller.simulateStartup();
         await startFuture1;
         expect(stockfish.state.value, StockfishState.ready);
 
@@ -231,7 +242,7 @@ void main() {
 
         // Restart
         final startFuture2 = stockfish.start();
-        controller.emitStdout('Stockfish 16');
+        controller.simulateStartup();
         await startFuture2;
         expect(stockfish.state.value, StockfishState.ready);
       });
@@ -263,7 +274,7 @@ void main() {
         // Fix the error and restart
         controller.bindings.initReturnValue = 0;
         final startFuture = stockfish.start();
-        controller.emitStdout('Stockfish 16');
+        controller.simulateStartup();
         await startFuture;
         expect(stockfish.state.value, StockfishState.ready);
       });
@@ -307,7 +318,7 @@ void main() {
           variant: 'atomic',
         );
 
-        controller.emitStdout('Fairy-Stockfish');
+        controller.simulateStartup();
         await startFuture;
 
         expect(stockfish.flavor, StockfishFlavor.variant);
@@ -325,7 +336,7 @@ void main() {
           variant: 'atomic',
         );
 
-        controller.emitStdout('Fairy-Stockfish');
+        controller.simulateStartup(engineName: 'Fairy-Stockfish');
 
         await startFuture;
 
@@ -347,7 +358,7 @@ void main() {
           smallNetPath: '/path/to/small.nnue',
         );
 
-        controller.emitStdout('Stockfish 17');
+        controller.simulateStartup(engineName: 'Stockfish 17');
 
         await startFuture;
 
@@ -384,7 +395,7 @@ void main() {
         final stockfish = Stockfish.instance;
         final startFuture = stockfish.start();
 
-        controller.emitStdout('Stockfish 16');
+        controller.simulateStartup();
         await startFuture;
 
         final quitFuture = stockfish.quit();
@@ -415,7 +426,7 @@ void main() {
         expect(controller.bindings.stdinCalls, isNot(contains('quit\n')));
 
         // Simulate engine becoming ready
-        controller.emitStdout('Stockfish 16');
+        controller.simulateStartup();
         await Future.delayed(Duration.zero);
 
         // Now quit should be sent
@@ -436,7 +447,7 @@ void main() {
         final stockfish = Stockfish.instance;
         final startFuture = stockfish.start();
 
-        controller.emitStdout('Stockfish 16');
+        controller.simulateStartup();
         await startFuture;
 
         // Call quit multiple times concurrently
@@ -482,7 +493,7 @@ void main() {
         final stockfish = Stockfish.instance;
         final startFuture = stockfish.start();
 
-        controller.emitStdout('Stockfish 16');
+        controller.simulateStartup();
         await startFuture;
 
         stockfish.stdin = 'uci';
@@ -529,7 +540,7 @@ void main() {
 
         // First session
         final startFuture1 = stockfish.start();
-        controller.emitStdout('Session 1');
+        controller.simulateStartup(engineName: 'Session 1');
         await startFuture1;
 
         final quitFuture = stockfish.quit();
@@ -538,7 +549,7 @@ void main() {
 
         // Second session - same listener should receive events
         final startFuture2 = stockfish.start();
-        controller.emitStdout('Session 2');
+        controller.simulateStartup(engineName: 'Session 2');
         await startFuture2;
 
         await Future.delayed(Duration.zero);
@@ -561,7 +572,7 @@ void main() {
         });
 
         final startFuture = stockfish.start();
-        controller.emitStdout('Stockfish 16');
+        controller.simulateStartup();
         await startFuture;
 
         final quitFuture = stockfish.quit();
@@ -576,41 +587,44 @@ void main() {
       });
     });
 
-    test('transitions to error state on engine crash and can restart', () async {
-      final controller = MockEngineController();
+    test(
+      'transitions to error state on engine crash and can restart',
+      () async {
+        final controller = MockEngineController();
 
-      await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-        final states = <StockfishState>[];
+        await runWithMockStockfish(controller, () async {
+          final stockfish = Stockfish.instance;
+          final states = <StockfishState>[];
 
-        stockfish.state.addListener(() {
-          states.add(stockfish.state.value);
+          stockfish.state.addListener(() {
+            states.add(stockfish.state.value);
+          });
+
+          // Start the engine
+          final startFuture = stockfish.start();
+          controller.simulateStartup();
+          await startFuture;
+          expect(stockfish.state.value, StockfishState.ready);
+
+          // Simulate engine crash (non-zero exit code)
+          controller.exit(1);
+          await Future.delayed(Duration.zero);
+
+          expect(stockfish.state.value, StockfishState.error);
+          expect(states, [
+            StockfishState.starting,
+            StockfishState.ready,
+            StockfishState.error,
+          ]);
+
+          // Should be able to restart after crash
+          final restartFuture = stockfish.start();
+          controller.simulateStartup();
+          await restartFuture;
+
+          expect(stockfish.state.value, StockfishState.ready);
         });
-
-        // Start the engine
-        final startFuture = stockfish.start();
-        controller.emitStdout('Stockfish 16');
-        await startFuture;
-        expect(stockfish.state.value, StockfishState.ready);
-
-        // Simulate engine crash (non-zero exit code)
-        controller.exit(1);
-        await Future.delayed(Duration.zero);
-
-        expect(stockfish.state.value, StockfishState.error);
-        expect(states, [
-          StockfishState.starting,
-          StockfishState.ready,
-          StockfishState.error,
-        ]);
-
-        // Should be able to restart after crash
-        final restartFuture = stockfish.start();
-        controller.emitStdout('Stockfish 16');
-        await restartFuture;
-
-        expect(stockfish.state.value, StockfishState.ready);
-      });
-    });
+      },
+    );
   });
 }

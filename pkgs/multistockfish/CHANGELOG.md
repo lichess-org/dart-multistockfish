@@ -1,3 +1,23 @@
+## 0.5.0
+
+**Breaking changes:**
+
+- `Stockfish.start` now sends the "uci" command to the engine and waits for it to respond with "uciok".
+  When using the library, do *not* send "uci" yourself anymore, as that would reset UCI options.
+
+**Migration:**
+
+```dart
+// Before
+await Stockfish.instance.start(flavor: StockfishFlavor.variant, variant: 'atomic');
+// stockfish is ready, enable uci protocol.
+Stockfish.instance.stdin = 'uci';
+
+// After
+await Stockfish.instance.start(flavor: StockfishFlavor.variant, variant: 'atomic');
+// "uci" command has already been sent to `stdin` internally, stockfish is ready and in uci mode.
+```
+
 ## 0.4.0
 
 - Update latest Stockfish to version 18.
