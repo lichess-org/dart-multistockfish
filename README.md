@@ -10,11 +10,9 @@ This plugin provides the following Stockfish engines:
 
 ## Usage
 
-### Init engine
+### Start engine
 
-> [!WARNING]
-> Only one instance can be created at a time. The `Stockfish()` constructor
-> will throw a StateError if called while another instance is running.
+`Stockfish` is a singleton. Access it via `Stockfish.instance` and call `start()` to run the engine.
 
 > [!NOTE]
 > When using the `StockfishFlavor.latestNoNNUE` flavor, you need to download the `.nnue` files before
@@ -23,15 +21,29 @@ This plugin provides the following Stockfish engines:
 ```dart
 import 'package:multistockfish/multistockfish.dart';
 
-// create a new instance
-final stockfish = Stockfish();
+final stockfish = Stockfish.instance;
 
 // state is a ValueListenable<StockfishState>
-print(stockfish.state.value); # StockfishState.starting
+print(stockfish.state.value); // StockfishState.initial
 
-// the engine takes a few moment to start
-await Future.delayed(...)
-print(stockfish.state.value); # StockfishState.ready
+// start the engine (defaults to StockfishFlavor.sf16)
+await stockfish.start();
+print(stockfish.state.value); // StockfishState.ready
+
+// to change flavor, quit first then start with new configuration
+await stockfish.quit();
+await stockfish.start(
+  flavor: StockfishFlavor.variant,
+  variant: 'atomic',
+);
+
+// for latestNoNNUE flavor, NNUE file paths are required
+await stockfish.quit();
+await stockfish.start(
+  flavor: StockfishFlavor.latestNoNNUE,
+  bigNetPath: '/path/to/big.nnue',
+  smallNetPath: '/path/to/small.nnue',
+);
 ```
 
 ### UCI command
@@ -54,14 +66,15 @@ stockfish.stdout.listen((line) {
 });
 ```
 
-### Dispose / Hot reload
+### Quit / Hot reload
 
-There are two active isolates when Stockfish engine is running. That interferes with Flutter's hot reload feature so you need to dispose it before attempting to reload.
+There are two active isolates when Stockfish engine is running. That interferes
+with Flutter's hot reload feature so you need to quit the engine before attempting to reload.
 
 ```dart
 // sends the UCI quit command
 stockfish.stdin = 'quit';
 
 // or even easier...
-stockfish.dispose();
+await stockfish.quit();
 ```

@@ -15,7 +15,6 @@ const _kDownloadUrl = 'https://tests.stockfishchess.org/api/nn/';
 const _kBigNet = Stockfish.latestBigNNUE;
 const _kSmallNet = Stockfish.latestSmallNNUE;
 
-
 final _bigNetUrl = Uri.parse('$_kDownloadUrl$_kBigNet');
 final _smallNetUrl = Uri.parse('$_kDownloadUrl$_kSmallNet');
 
@@ -41,7 +40,7 @@ class MyApp extends StatefulWidget {
 class _AppState extends State<MyApp> {
   Directory? appSupportDirectory;
   StockfishFlavor flavor = StockfishFlavor.sf16;
-  late Stockfish stockfish;
+  final stockfish = Stockfish.instance;
 
   final Completer<NNUEFiles> _nnueFilesCompleter = Completer<NNUEFiles>();
 
@@ -54,6 +53,8 @@ class _AppState extends State<MyApp> {
   ValueListenable<double> get smallNetProgress => _smallNetProgress;
 
   String? variant = '3check';
+
+  NNUEFiles? _nnueFiles;
 
   static const _variants = [
     '3check',
@@ -68,8 +69,21 @@ class _AppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
-    stockfish = Stockfish(flavor: flavor, variant: variant);
     _fetchNNUEFiles();
+  }
+
+  Future<void> _startStockfish() async {
+    await stockfish.start(
+      flavor: flavor,
+      variant: variant,
+      bigNetPath: _nnueFiles?.bigNetPath,
+      smallNetPath: _nnueFiles?.smallNetPath,
+    );
+  }
+
+  Future<void> _restartStockfish() async {
+    await stockfish.quit();
+    await _startStockfish();
   }
 
   Future<void> _fetchNNUEFiles() async {
@@ -77,10 +91,8 @@ class _AppState extends State<MyApp> {
     final bigNet = File('${appSupportDirectory!.path}/$_kBigNet');
     final smallNet = File('${appSupportDirectory!.path}/$_kSmallNet');
     if (await bigNet.exists() && await smallNet.exists()) {
-      _nnueFilesCompleter.complete((
-        bigNetPath: bigNet.path,
-        smallNetPath: smallNet.path,
-      ));
+      _nnueFiles = (bigNetPath: bigNet.path, smallNetPath: smallNet.path);
+      _nnueFilesCompleter.complete(_nnueFiles);
       return;
     }
 
@@ -114,10 +126,8 @@ class _AppState extends State<MyApp> {
       debugPrint('Failed to download NNUE files: $e');
     }
 
-    _nnueFilesCompleter.complete((
-      bigNetPath: bigNet.path,
-      smallNetPath: smallNet.path,
-    ));
+    _nnueFiles = (bigNetPath: bigNet.path, smallNetPath: smallNet.path);
+    _nnueFilesCompleter.complete(_nnueFiles);
   }
 
   @override
@@ -168,93 +178,49 @@ class _AppState extends State<MyApp> {
                   ),
                 Padding(
                   padding: const EdgeInsets.all(8.0),
-                  child: AnimatedBuilder(
-                    animation: stockfish.state,
-                    builder: (_, _) {
-                      return DropdownButton<StockfishFlavor>(
-                        onChanged:
-                            stockfish.state.value == StockfishState.disposed
-                                ? (value) {
-                                  setState(() {
-                                    flavor = value!;
-                                    stockfish = Stockfish(
-                                      flavor: flavor,
-                                      bigNetPath:
-                                          snapshot.hasData
-                                              ? snapshot.requireData.bigNetPath
-                                              : null,
-                                      smallNetPath:
-                                          snapshot.hasData
-                                              ? snapshot
-                                                  .requireData
-                                                  .smallNetPath
-                                              : null,
-                                      variant: variant,
-                                    );
-                                  });
-                                }
-                                : null,
-                        value: flavor,
-                        items: StockfishFlavor.values
-                            .where(
-                              (flavor) =>
-                                  flavor != StockfishFlavor.latestNoNNUE ||
-                                  snapshot.hasData,
-                            )
-                            .map(
-                              (flavor) => DropdownMenuItem(
-                                value: flavor,
-                                child: Text(flavor.toString().split('.').last),
-                              ),
-                            )
-                            .toList(growable: false),
-                      );
+                  child: DropdownButton<StockfishFlavor>(
+                    onChanged: (value) {
+                      setState(() => flavor = value!);
+                      if (stockfish.state.value == StockfishState.ready) {
+                        _restartStockfish();
+                      }
                     },
+                    value: flavor,
+                    items: StockfishFlavor.values
+                        .where(
+                          (flavor) =>
+                              flavor != StockfishFlavor.latestNoNNUE ||
+                              snapshot.hasData,
+                        )
+                        .map(
+                          (flavor) => DropdownMenuItem(
+                            value: flavor,
+                            child: Text(flavor.toString().split('.').last),
+                          ),
+                        )
+                        .toList(growable: false),
                   ),
                 ),
                 if (flavor == StockfishFlavor.variant)
-                  AnimatedBuilder(
-                    animation: stockfish.state,
-                    builder: (_, _) {
-                      return Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: DropdownButton<String>(
-                          onChanged:
-                              stockfish.state.value == StockfishState.disposed
-                                  ? (value) {
-                                    setState(() {
-                                      variant = value!;
-                                      stockfish = Stockfish(
-                                        flavor: flavor,
-                                        bigNetPath:
-                                            snapshot.hasData
-                                                ? snapshot
-                                                    .requireData
-                                                    .bigNetPath
-                                                : null,
-                                        smallNetPath:
-                                            snapshot.hasData
-                                                ? snapshot
-                                                    .requireData
-                                                    .smallNetPath
-                                                : null,
-                                        variant: variant,
-                                      );
-                                    });
-                                  }
-                                  : null,
-                          value: variant,
-                          items: _variants
-                              .map(
-                                (variant) => DropdownMenuItem(
-                                  value: variant,
-                                  child: Text(variant),
-                                ),
-                              )
-                              .toList(growable: false),
-                        ),
-                      );
-                    },
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: DropdownButton<String>(
+                      onChanged: (value) {
+                        setState(() => variant = value!);
+                        if (stockfish.state.value == StockfishState.ready) {
+                          _restartStockfish();
+                        }
+                      },
+                      value: variant,
+                      items: _variants
+                          .map(
+                            (variant) => DropdownMenuItem(
+                              value: variant,
+                              child: Text(variant),
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
                   ),
                 Padding(
                   padding: const EdgeInsets.all(8.0),
@@ -274,16 +240,12 @@ class _AppState extends State<MyApp> {
                     builder:
                         (_, __) => ElevatedButton(
                           onPressed:
-                              stockfish.state.value == StockfishState.disposed
-                                  ? () {
-                                    final newInstance = Stockfish(
-                                      flavor: flavor,
-                                      variant: variant,
-                                    );
-                                    setState(() => stockfish = newInstance);
-                                  }
+                              stockfish.state.value == StockfishState.initial ||
+                                      stockfish.state.value ==
+                                          StockfishState.error
+                                  ? _startStockfish
                                   : null,
-                          child: const Text('Reset Stockfish instance'),
+                          child: const Text('Start Stockfish'),
                         ),
                   ),
                 ),

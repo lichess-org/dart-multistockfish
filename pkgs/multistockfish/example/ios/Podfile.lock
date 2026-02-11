@@ -1,10 +1,10 @@
 PODS:
   - Flutter (1.0.0)
-  - multistockfish_chess (0.2.0):
+  - multistockfish_chess (0.2.1):
     - Flutter
-  - multistockfish_sf16 (0.1.0):
+  - multistockfish_sf16 (0.1.1):
     - Flutter
-  - multistockfish_variant (0.1.0):
+  - multistockfish_variant (0.1.1):
     - Flutter
   - path_provider_foundation (0.0.1):
     - Flutter
@@ -30,12 +30,12 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/path_provider_foundation/darwin"
 
 SPEC CHECKSUMS:
-  Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
-  multistockfish_chess: 0c4f08d6987f359afa5c9f7b02e04f37dc336d02
-  multistockfish_sf16: 0b68c76717a38aab7af00c5a54eb87b3b6df9b17
-  multistockfish_variant: e11fc38273552461df4b537ccadd101b18e0e018
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  multistockfish_chess: 0a64d9d493ba6acfe04ac505c75e8ac093cdb67b
+  multistockfish_sf16: dfd62eb23f5caaad596fa61e88624ead35f0a5e8
+  multistockfish_variant: fba6f8034da46db2a1745a0fab420000c3db5cd9
   path_provider_foundation: 080d55be775b7414fd5a5ef3ac137b97b097e564
 
-PODFILE CHECKSUM: 4305caec6b40dde0ae97be1573c53de1882a07e5
+PODFILE CHECKSUM: 3c63482e143d1b91d2d2560aee9fb04ecc74ac7e
 
 COCOAPODS: 1.16.2
