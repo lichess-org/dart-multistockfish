@@ -35,7 +35,7 @@ class Stockfish {
   static final Stockfish instance = Stockfish._();
 
   /// The default big NNUE file for evaluation of [StockfishFlavor.latestNoNNUE].
-  static const latestBigNNUE = 'nn-1c0000000000.nnue';
+  static const latestBigNNUE = 'nn-c288c895ea92.nnue';
 
   /// The default small NNUE file for evaluation of [StockfishFlavor.latestNoNNUE].
   static const latestSmallNNUE = 'nn-37f18f62d772.nnue';
