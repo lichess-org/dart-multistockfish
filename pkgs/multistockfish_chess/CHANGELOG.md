@@ -1,3 +1,7 @@
+## 0.3.0
+
+- Update Stockfish to version 18.
+
 ## 0.2.1
 
 - Fix Pod target configuration.
