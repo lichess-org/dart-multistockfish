@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2025 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -85,16 +85,13 @@ void TimeManagement::init(Search::LimitsType& limits,
     // with constants are involved.
     const int64_t   scaleFactor = useNodesTime ? npmsec : 1;
     const TimePoint scaledTime  = limits.time[us] / scaleFactor;
-    const TimePoint scaledInc   = limits.inc[us] / scaleFactor;
 
     // Maximum move horizon
     int centiMTG = limits.movestogo ? std::min(limits.movestogo * 100, 5000) : 5051;
 
     // If less than one second, gradually reduce mtg
-    if (scaledTime < 1000 && double(centiMTG) / scaledInc > 5.051)
-    {
-        centiMTG = scaledTime * 5.051;
-    }
+    if (scaledTime < 1000)
+        centiMTG = int(scaledTime * 5.051);
 
     // Make sure timeLeft is > 0 since we may use it as a divisor
     TimePoint timeLeft =

@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2025 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -40,11 +40,11 @@ namespace Stockfish {
 namespace {
 
 // Version number or dev.
-constexpr std::string_view version = "17.1";
+constexpr std::string_view version = "18";
 
 // Our fancy logging facility. The trick here is to replace cin.rdbuf() and
 // cout.rdbuf() with two Tie objects that tie cin and cout to a file stream. We
-// can toggle the logging of std::cout and std:cin at runtime whilst preserving
+// can toggle the logging of std::cout and std::cin at runtime whilst preserving
 // usual I/O functionality, all without changing a single line of code!
 // Idea from http://groups.google.com/group/comp.lang.c++/msg/1d941c0f26ea0d81
 
@@ -237,6 +237,9 @@ std::string compiler_info() {
 
     compiler += "\nCompilation settings       : ";
     compiler += (Is64Bit ? "64bit" : "32bit");
+#if defined(USE_AVX512ICL)
+    compiler += " AVX512ICL";
+#endif
 #if defined(USE_VNNI)
     compiler += " VNNI";
 #endif
@@ -256,12 +259,12 @@ std::string compiler_info() {
 #if defined(USE_SSE2)
     compiler += " SSE2";
 #endif
-    compiler += (HasPopCnt ? " POPCNT" : "");
 #if defined(USE_NEON_DOTPROD)
     compiler += " NEON_DOTPROD";
 #elif defined(USE_NEON)
     compiler += " NEON";
 #endif
+    compiler += (HasPopCnt ? " POPCNT" : "");
 
 #if !defined(NDEBUG)
     compiler += " DEBUG";
