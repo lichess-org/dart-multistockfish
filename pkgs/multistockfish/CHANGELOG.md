@@ -1,5 +1,7 @@
 ## 0.4.0
 
+- Update latest Stockfish to version 18.
+
 **Breaking changes:**
 
 - `Stockfish` is now a singleton. Use `Stockfish.instance`.

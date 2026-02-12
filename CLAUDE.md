@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Flutter plugin providing multiple flavors of the Stockfish chess engine for Android and iOS:
 - **sf16**: Stockfish 16 with embedded NNUE (38MB)
-- **latestNoNNUE**: Stockfish 17.1 without embedded NNUE (requires downloading .nnue files)
+- **latestNoNNUE**: Stockfish 18 without embedded NNUE (requires downloading .nnue files)
 - **variant**: Fairy-Stockfish for chess variants (3check, crazyhouse, atomic, etc.)
 
 ## Development Commands
@@ -31,7 +31,7 @@ This is a Dart workspace monorepo with the following structure:
 
 ### Package Structure
 - **pkgs/multistockfish**: Main Flutter plugin with Dart bindings and public API
-- **pkgs/multistockfish_chess**: Native C++ library for Stockfish 17.1 (no embedded NNUE)
+- **pkgs/multistockfish_chess**: Native C++ library for Stockfish 18 (no embedded NNUE)
 - **pkgs/multistockfish_sf16**: Native C++ library for Stockfish 16 (embedded NNUE)
 - **pkgs/multistockfish_variant**: Native C++ library for Fairy-Stockfish (variants)
 

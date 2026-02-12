@@ -1,6 +1,6 @@
 name: multistockfish_chess
 description: "Stockfish C++ library for chess and chess 960."
-version: 0.2.1
+version: 0.3.0
 repository: https://github.com/lichess-org/dart-multistockfish.git
 homepage: https://github.com/lichess-org/dart-multistockfish.git
 
