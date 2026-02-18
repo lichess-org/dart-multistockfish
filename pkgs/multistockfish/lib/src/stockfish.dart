@@ -169,6 +169,12 @@ class Stockfish {
     try {
       // Wait for the engine to be ready by checking the first non-empty line (usually its name).
       await stdout.firstWhere((line) => line.isNotEmpty).timeout(kStartTimeout);
+
+      _state._setValue(StockfishState.ready);
+
+      // Switch to the engine to UCI protocol
+      stdin = 'uci';
+      await stdout.firstWhere((line) => line == "uciok").timeout(kStartTimeout);
     } on TimeoutException {
       _state._setValue(StockfishState.error);
       _logger.severe(
@@ -176,8 +182,6 @@ class Stockfish {
       );
       rethrow;
     }
-
-    _state._setValue(StockfishState.ready);
 
     if (_flavor == StockfishFlavor.variant && _variant != null) {
       stdin = 'setoption name UCI_Variant value $_variant';
