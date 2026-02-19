@@ -1,3 +1,8 @@
+[![Tests](https://github.com/lichess-org/dart-multistockfish/workflows/Test/badge.svg)](https://github.com/lichess-org/dart-multistockfish/actions?query=workflow%3A%22Test%22)
+[![pub package](https://img.shields.io/pub/v/multistockfish.svg)](https://pub.dev/packages/multistockfish)
+[![package publisher](https://img.shields.io/pub/publisher/multistockfish.svg)](https://pub.dev/packages/multistockfish/publisher)
+[![Discord](https://img.shields.io/discord/280713822073913354?label=Discord&logo=discord&style=flat)](https://discord.com/channels/280713822073913354/807722604478988348)
+
 # multistockfish
 
 Multiple flavors of Stockfish Engine.
