@@ -15,6 +15,9 @@ jobs:
       with:
         channel: 'beta'
 
+    - Change to multistockfish directory
+    - run: cd pkgs/multistockfish
+
     - name: Install dependencies
       run: flutter pub get
 
