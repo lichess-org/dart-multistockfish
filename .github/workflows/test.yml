@@ -15,7 +15,7 @@ jobs:
       with:
         channel: 'beta'
 
-    - Change to multistockfish directory
+    - name: Change to multistockfish directory
     - run: cd pkgs/multistockfish
 
     - name: Install dependencies
