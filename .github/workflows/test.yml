@@ -9,14 +9,14 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pkgs/multistockfish
     steps:
     - uses: actions/checkout@v3
     - uses: subosito/flutter-action@v2
       with:
         channel: 'beta'
-
-    - name: Change to multistockfish directory
-    - run: cd pkgs/multistockfish
 
     - name: Install dependencies
       run: flutter pub get
