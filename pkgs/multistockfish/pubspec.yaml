@@ -1,6 +1,6 @@
 name: multistockfish
 description: "Multiple flavors of Stockfish Engine"
-version: 0.4.0
+version: 0.5.0
 repository: https://github.com/lichess-org/dart-multistockfish.git
 homepage: https://github.com/lichess-org/dart-multistockfish.git
 
