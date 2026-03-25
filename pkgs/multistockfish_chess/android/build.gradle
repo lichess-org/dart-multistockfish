@@ -40,7 +40,7 @@ android {
     // Invoke the shared CMake build with the Android Gradle Plugin.
     externalNativeBuild {
         cmake {
-            path = "../src/CMakeLists.txt"
+            path = "CMakeLists.txt"
         }
     }
 
