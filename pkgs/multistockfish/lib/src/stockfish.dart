@@ -63,6 +63,11 @@ class Stockfish {
   final _stdoutController = StreamController<String>.broadcast();
   final _mainPort = ReceivePort('Stockfish main isolate port');
   final _stdoutPort = ReceivePort('Stockfish stdout isolate port');
+  final _stdoutExitPort = ReceivePort('Stockfish stdout isolate exit port');
+
+  /// Completes when the current stdout reader isolate exits, so a restart can
+  /// wait for it before spawning a new one. `null` when no real reader runs.
+  Completer<void>? _stdoutExited;
 
   Future<void>? _pendingStart;
   Future<void>? _pendingQuit;
@@ -79,6 +84,14 @@ class Stockfish {
         _stdoutController.sink.add(message);
       } else {
         _logger.fine('The stdout isolate sent $message');
+      }
+    });
+
+    _stdoutExitPort.listen((_) {
+      _logger.fine('The stdout isolate exited');
+      final exited = _stdoutExited;
+      if (exited != null && !exited.isCompleted) {
+        exited.complete();
       }
     });
   }
@@ -152,11 +165,15 @@ class Stockfish {
   }
 
   Future<void> _doStart() async {
-    final success = await _spawnIsolates(
-      _mainPort.sendPort,
-      _stdoutPort.sendPort,
-      _flavor,
-    );
+    // Wait for the previous reader isolate to exit before reopening the pipes,
+    // otherwise two readers race on the process-global pipes and the new
+    // engine's UCI handshake is lost. Timeout avoids deadlocking on a stuck one.
+    final previousReader = _stdoutExited;
+    if (previousReader != null) {
+      await previousReader.future.timeout(kStartTimeout, onTimeout: () {});
+    }
+
+    final success = await _spawnIsolates(_flavor);
 
     if (!success) {
       _logger.severe('Failed to spawn isolates');
@@ -244,6 +261,59 @@ class Stockfish {
       exitCode == 0 ? StockfishState.initial : StockfishState.error,
     );
   }
+
+  Future<bool> _spawnIsolates(StockfishFlavor flavor) async {
+    // Check for zone override (used in tests)
+    final override = Zone.current[stockfishSpawnIsolatesKey];
+    if (override != null) {
+      // No reader isolate under the test override; nothing to join later.
+      _stdoutExited = null;
+      return (override
+          as Future<bool> Function(SendPort, SendPort, StockfishFlavor))(
+        _mainPort.sendPort,
+        _stdoutPort.sendPort,
+        flavor,
+      );
+    }
+
+    final bindings = _getBindings(flavor);
+
+    final initResult = bindings.init();
+    if (initResult != 0) {
+      _logger.severe('initResult=$initResult');
+      return false;
+    }
+
+    // Arm the completer before spawning so an early exit can't be missed.
+    final stdoutExited = Completer<void>();
+    _stdoutExited = stdoutExited;
+    try {
+      await Isolate.spawn(
+        _isolateStdout,
+        (_stdoutPort.sendPort, flavor),
+        onExit: _stdoutExitPort.sendPort,
+        debugName: 'Stockfish stdout isolate',
+      );
+    } catch (error) {
+      _logger.severe('Failed to spawn stdout isolate: $error');
+      if (!stdoutExited.isCompleted) {
+        stdoutExited.complete();
+      }
+      return false;
+    }
+
+    try {
+      await Isolate.spawn(_isolateMain, (
+        _mainPort.sendPort,
+        flavor,
+      ), debugName: 'Stockfish main isolate');
+    } catch (error) {
+      _logger.severe('Failed to spawn main isolate: $error');
+      return false;
+    }
+
+    return true;
+  }
 }
 
 DynamicLibrary _openDynamicLibrary(String libName) {
@@ -316,53 +386,6 @@ void _isolateStdout(_IsolateArgs args) {
       stdoutPort.send(line);
     }
   }
-}
-
-Future<bool> _spawnIsolates(
-  SendPort mainPort,
-  SendPort stdoutPort,
-  StockfishFlavor flavor,
-) async {
-  // Check for zone override (used in tests)
-  final override = Zone.current[stockfishSpawnIsolatesKey];
-  if (override != null) {
-    return (override
-        as Future<bool> Function(SendPort, SendPort, StockfishFlavor))(
-      mainPort,
-      stdoutPort,
-      flavor,
-    );
-  }
-
-  final bindings = _getBindings(flavor);
-
-  final initResult = bindings.init();
-  if (initResult != 0) {
-    _logger.severe('initResult=$initResult');
-    return false;
-  }
-
-  try {
-    await Isolate.spawn(_isolateStdout, (
-      stdoutPort,
-      flavor,
-    ), debugName: 'Stockfish stdout isolate');
-  } catch (error) {
-    _logger.severe('Failed to spawn stdout isolate: $error');
-    return false;
-  }
-
-  try {
-    await Isolate.spawn(_isolateMain, (
-      mainPort,
-      flavor,
-    ), debugName: 'Stockfish main isolate');
-  } catch (error) {
-    _logger.severe('Failed to spawn main isolate: $error');
-    return false;
-  }
-
-  return true;
 }
 
 typedef _IsolateArgs = (SendPort sendPort, StockfishFlavor flavor);
