@@ -62,12 +62,31 @@ namespace MultiStockfishFairy {
 const char *QUITOK = "quitok\n";
 int pipes[NUM_PIPES][2];
 char buffer[80];
+int pipes_open = 0;
 
 int stockfish_init()
 {
-  pipe(pipes[PARENT_READ_PIPE]);
-  pipe(pipes[PARENT_WRITE_PIPE]);
+  // close the previous run's parent ends so restarts don't leak fds
+  if (pipes_open)
+  {
+    close(PARENT_READ_FD);
+    close(PARENT_WRITE_FD);
+    pipes_open = 0;
+  }
 
+  // report pipe() failures instead of returning success with bad fds
+  if (pipe(pipes[PARENT_READ_PIPE]) != 0)
+  {
+    return -1;
+  }
+  if (pipe(pipes[PARENT_WRITE_PIPE]) != 0)
+  {
+    close(pipes[PARENT_READ_PIPE][READ_FD]);
+    close(pipes[PARENT_READ_PIPE][WRITE_FD]);
+    return -1;
+  }
+
+  pipes_open = 1;
   return 0;
 }
 
@@ -75,6 +94,10 @@ int stockfish_main()
 {
   dup2(CHILD_READ_FD, STDIN_FILENO);
   dup2(CHILD_WRITE_FD, STDOUT_FILENO);
+
+  // close unused pipe fds
+  close(CHILD_READ_FD);
+  close(CHILD_WRITE_FD);
 
   int argc = 1;
   char *argv[] = {""};
