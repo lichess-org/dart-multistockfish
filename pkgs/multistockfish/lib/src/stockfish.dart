@@ -177,6 +177,7 @@ class Stockfish {
       await stdout.firstWhere((line) => line == "uciok").timeout(kStartTimeout);
     } on TimeoutException {
       _state._setValue(StockfishState.error);
+      _bindings.stdinWrite('quit\n');
       _logger.severe(
         'The engine did not become ready in time (${kStartTimeout.inSeconds}s).',
       );

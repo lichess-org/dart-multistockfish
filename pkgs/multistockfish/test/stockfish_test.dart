@@ -11,6 +11,7 @@ class MockStockfishBindings implements StockfishBindings {
   final List<String> stdinCalls = [];
   int initReturnValue = 0;
   int mainReturnValue = 0;
+  void Function(String input)? onStdin;
 
   @override
   int init() => initReturnValue;
@@ -21,6 +22,7 @@ class MockStockfishBindings implements StockfishBindings {
   @override
   int stdinWrite(String input) {
     stdinCalls.add(input);
+    onStdin?.call(input);
     return 0;
   }
 
@@ -30,7 +32,17 @@ class MockStockfishBindings implements StockfishBindings {
 
 /// Controller for simulating engine behavior in tests.
 class MockEngineController {
+  MockEngineController() {
+    bindings.onStdin = (input) {
+      if (input.trim() == 'quit') exit(0);
+    };
+  }
+
   final MockStockfishBindings bindings = MockStockfishBindings();
+
+  /// Engines spawned but not yet exited.
+  int liveEngines = 0;
+  int maxLiveEngines = 0;
 
   SendPort? _mainPort;
   SendPort? _stdoutPort;
@@ -53,6 +65,7 @@ class MockEngineController {
 
   /// Simulates the engine exiting with the given code.
   void exit(int code) {
+    if (liveEngines > 0) liveEngines--;
     _mainPort?.send(code);
   }
 
@@ -68,6 +81,9 @@ class MockEngineController {
     if (bindings.initReturnValue != 0) {
       return false;
     }
+
+    liveEngines++;
+    if (liveEngines > maxLiveEngines) maxLiveEngines = liveEngines;
 
     return true;
   }
@@ -307,6 +323,28 @@ void main() {
         });
       });
     });
+
+    test(
+      'a failed start does not leave an engine behind for the next one',
+      () async {
+        final controller = MockEngineController();
+
+        await runWithMockStockfish(controller, () {
+          fakeAsync((async) {
+            for (var attempt = 0; attempt < 3; attempt++) {
+              Stockfish.instance.start().catchError((_) => null);
+              async.flushMicrotasks();
+              async.elapse(kStartTimeout + const Duration(seconds: 1));
+            }
+
+            expect(controller.maxLiveEngines, 1);
+
+            controller.exit(0);
+            async.flushMicrotasks();
+          });
+        });
+      },
+    );
 
     test('configures flavor correctly', () async {
       final controller = MockEngineController();
