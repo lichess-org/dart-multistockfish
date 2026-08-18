@@ -9,7 +9,7 @@
 #include "../Stockfish/src/uci.h"
 #include "../Stockfish/src/tune.h"
 
-#include "stockfish_nnue.h"
+#include "./include/multistockfish_chess/stockfish_nnue.h"
 
 // https://jineshkj.wordpress.com/2006/12/22/how-to-capture-stdin-stdout-and-stderr-of-child-program/
 #define NUM_PIPES 2
