@@ -14,13 +14,18 @@ Pod::Spec.new do |s|
   s.license          = { :file => '../LICENSE', :type => 'GPL' }
   s.author           = { 'lichess.org' => 'contact@lichess.org' }
   s.source = { :git => pubspec['repository'], :tag => s.version.to_s }
-  s.source_files = 'Classes/**/*', 'Fairy-Stockfish-2b5d9512/src/**/*'
+  s.source_files = [
+    'multistockfish_variant/Sources/multistockfish_variant/*.{c,cc,cpp,h,hpp}',
+    'multistockfish_variant/Sources/multistockfish_variant/include/**/*.h',
+    'multistockfish_variant/Sources/multistockfish_variant/Fairy-Stockfish-2b5d9512/src/**/*',
+  ]
+  s.public_header_files = 'multistockfish_variant/Sources/multistockfish_variant/include/**/*.h'
   s.exclude_files = [
-    'Fairy-Stockfish-2b5d9512/src/Makefile',
-    'Fairy-Stockfish-2b5d9512/src/Makefile_js',
-    'Fairy-Stockfish-2b5d9512/src/variants.ini',
-    'Fairy-Stockfish-2b5d9512/src/incbin/UNLICENCE',
-    'Fairy-Stockfish-2b5d9512/src/**/{main,pyffish,ffishjs}.cpp',
+    'multistockfish_variant/Sources/multistockfish_variant/Fairy-Stockfish-2b5d9512/src/Makefile',
+    'multistockfish_variant/Sources/multistockfish_variant/Fairy-Stockfish-2b5d9512/src/Makefile_js',
+    'multistockfish_variant/Sources/multistockfish_variant/Fairy-Stockfish-2b5d9512/src/variants.ini',
+    'multistockfish_variant/Sources/multistockfish_variant/Fairy-Stockfish-2b5d9512/src/incbin/UNLICENCE',
+    'multistockfish_variant/Sources/multistockfish_variant/Fairy-Stockfish-2b5d9512/src/**/{main,pyffish,ffishjs}.cpp',
   ]
   s.dependency 'Flutter'
   s.platform = :ios, '12.0'

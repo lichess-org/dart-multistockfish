@@ -5,12 +5,12 @@ cmake_minimum_required(VERSION 3.10)
 
 project(multistockfish_chess_library VERSION 0.2.0 LANGUAGES CXX)
 
-file(GLOB_RECURSE sf17Paths "../ios/Stockfish/src/*.cpp")
+file(GLOB_RECURSE sf17Paths "../ios/multistockfish_chess/Sources/multistockfish_chess/Stockfish/src/*.cpp")
 
 add_library(
   multistockfish_chess
   SHARED
-  ../ios/Classes/stockfish_nnue.cpp
+  ../ios/multistockfish_chess/Sources/multistockfish_chess/stockfish_nnue.cpp
   ${sf17Paths}
 )
 
