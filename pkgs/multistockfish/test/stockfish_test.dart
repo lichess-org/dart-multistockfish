@@ -30,22 +30,64 @@ class MockStockfishBindings implements StockfishBindings {
   String? stdoutRead() => null;
 }
 
-/// Controller for simulating engine behavior in tests.
-class MockEngineController {
-  MockEngineController() {
-    bindings.onStdin = (input) {
-      if (input.trim() == 'quit') exit(0);
-    };
+/// A single simulated engine, holding the ports it was spawned with.
+///
+/// Each engine keeps its own ports, mirroring production, so that a test can
+/// make an old engine talk after a new one has been spawned.
+class MockEngine {
+  MockEngine(this._mainPort, this._stdoutPort);
+
+  final SendPort _mainPort;
+  final SendPort _stdoutPort;
+
+  bool _exited = false;
+
+  /// Whether this engine is still running.
+  bool get isAlive => !_exited;
+
+  /// Simulates the engine outputting a line to stdout.
+  void emitStdout(String line) {
+    _stdoutPort.send(line);
   }
 
+  /// Simulates the engine exiting with the given code.
+  ///
+  /// Exiting twice is a no-op, as it is for a real process.
+  void exit(int code) {
+    if (_exited) return;
+    _exited = true;
+    _mainPort.send(code);
+  }
+}
+
+/// Controller for simulating engine behavior in tests.
+class MockEngineController {
   final MockStockfishBindings bindings = MockStockfishBindings();
 
+  /// Every engine spawned so far, in spawn order.
+  final List<MockEngine> engines = [];
+
+  /// The most recently spawned engine.
+  MockEngine get engine => engines.last;
+
   /// Engines spawned but not yet exited.
-  int liveEngines = 0;
+  int get liveEngines => engines.where((e) => e.isAlive).length;
+
+  /// The high-water mark of [liveEngines].
   int maxLiveEngines = 0;
 
-  SendPort? _mainPort;
-  SendPort? _stdoutPort;
+  /// Makes engines exit shortly after they are sent the `quit` command.
+  ///
+  /// Off by default so that tests drive exits explicitly. The exit is
+  /// asynchronous, like a real engine's, so that enabling this exercises the
+  /// window during which the engine has been told to quit but is still alive.
+  void exitOnQuit({Duration after = Duration.zero}) {
+    bindings.onStdin = (input) {
+      if (input.trim() != 'quit') return;
+      final engine = engines.lastWhere((e) => e.isAlive);
+      Future.delayed(after, () => engine.exit(0));
+    };
+  }
 
   /// Simulates the engine starting up by writing its version to stdout
   /// and responding to the "uci" command with "uciok".
@@ -58,15 +100,14 @@ class MockEngineController {
     emitStdout('uciok');
   }
 
-  /// Simulates the engine outputting a line to stdout.
+  /// Simulates the latest engine outputting a line to stdout.
   void emitStdout(String line) {
-    _stdoutPort?.send(line);
+    engines.lastOrNull?.emitStdout(line);
   }
 
-  /// Simulates the engine exiting with the given code.
+  /// Simulates the latest engine exiting with the given code.
   void exit(int code) {
-    if (liveEngines > 0) liveEngines--;
-    _mainPort?.send(code);
+    engines.lastOrNull?.exit(code);
   }
 
   /// The spawn isolates override function for zone injection.
@@ -75,14 +116,11 @@ class MockEngineController {
     SendPort stdoutPort,
     StockfishFlavor flavor,
   ) async {
-    _mainPort = mainPort;
-    _stdoutPort = stdoutPort;
-
     if (bindings.initReturnValue != 0) {
       return false;
     }
 
-    liveEngines++;
+    engines.add(MockEngine(mainPort, stdoutPort));
     if (liveEngines > maxLiveEngines) maxLiveEngines = liveEngines;
 
     return true;
@@ -223,8 +261,11 @@ void main() {
           // Both should be the same future
           expect(startFuture2, same(startFuture1));
 
-          // Don't emit stdout - simulate timeout
-          async.elapse(kStartTimeout + const Duration(seconds: 1));
+          // Don't emit stdout - simulate timeout, then let the engine be
+          // given up on
+          async.elapse(
+            kStartTimeout + kQuitTimeout + const Duration(seconds: 1),
+          );
 
           // Both callers should receive the same error
           expect(error1, isA<TimeoutException>());
@@ -311,8 +352,11 @@ void main() {
           // Flush microtasks to let start() begin
           async.flushMicrotasks();
 
-          // Advance time past the 10 second timeout
-          async.elapse(kStartTimeout + const Duration(seconds: 1));
+          // Advance time past the start timeout, then past the grace period
+          // the failed engine is given to exit
+          async.elapse(
+            kStartTimeout + kQuitTimeout + const Duration(seconds: 1),
+          );
 
           expect(caughtError, isA<TimeoutException>());
           expect(Stockfish.instance.state.value, StockfishState.error);
@@ -324,27 +368,101 @@ void main() {
       });
     });
 
+    test('a start that times out quits the engine and waits for it', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () {
+        fakeAsync((async) {
+          Object? caughtError;
+
+          Stockfish.instance.start().catchError((e) {
+            caughtError = e;
+            return null;
+          });
+
+          async.flushMicrotasks();
+          async.elapse(kStartTimeout + const Duration(seconds: 1));
+
+          // The engine has been told to quit, but start() does not report
+          // failure while the engine may still be winding down: letting the
+          // caller retry now would run two engines at once.
+          expect(controller.bindings.stdinCalls, contains('quit\n'));
+          expect(caughtError, isNull);
+          expect(Stockfish.instance.state.value, StockfishState.starting);
+
+          async.elapse(kQuitTimeout);
+
+          expect(caughtError, isA<TimeoutException>());
+          expect(Stockfish.instance.state.value, StockfishState.error);
+        });
+      });
+    });
+
     test(
       'a failed start does not leave an engine behind for the next one',
       () async {
-        final controller = MockEngineController();
+        final controller = MockEngineController()..exitOnQuit();
 
         await runWithMockStockfish(controller, () {
           fakeAsync((async) {
             for (var attempt = 0; attempt < 3; attempt++) {
               Stockfish.instance.start().catchError((_) => null);
               async.flushMicrotasks();
-              async.elapse(kStartTimeout + const Duration(seconds: 1));
+              async.elapse(
+                kStartTimeout + kQuitTimeout + const Duration(seconds: 1),
+              );
             }
 
+            expect(controller.engines, hasLength(3));
             expect(controller.maxLiveEngines, 1);
-
-            controller.exit(0);
-            async.flushMicrotasks();
+            expect(controller.liveEngines, 0);
           });
         });
       },
     );
+
+    test('an engine abandoned after a failed start cannot disturb the next '
+        'one', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final stockfish = Stockfish.instance;
+
+        // A first start times out, and the engine never honours the quit
+        // command, so it is eventually given up on.
+        fakeAsync((async) {
+          stockfish.start().catchError((_) => null);
+          async.flushMicrotasks();
+          async.elapse(
+            kStartTimeout + kQuitTimeout + const Duration(seconds: 1),
+          );
+          expect(stockfish.state.value, StockfishState.error);
+        });
+
+        final abandoned = controller.engines.single;
+        expect(abandoned.isAlive, isTrue);
+
+        // The next engine starts normally.
+        final startFuture = stockfish.start();
+        await controller.simulateStartup();
+        await startFuture;
+        expect(stockfish.state.value, StockfishState.ready);
+
+        // The abandoned engine finally comes back to life. Nothing it says
+        // may reach the engine that replaced it.
+        abandoned.emitStdout('too late');
+        abandoned.exit(0);
+        await Future.delayed(Duration.zero);
+
+        expect(stockfish.state.value, StockfishState.ready);
+        stockfish.stdin = 'isready';
+
+        final quitFuture = stockfish.quit();
+        controller.exit(0);
+        await quitFuture;
+        expect(stockfish.state.value, StockfishState.initial);
+      });
+    });
 
     test('configures flavor correctly', () async {
       final controller = MockEngineController();
