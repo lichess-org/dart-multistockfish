@@ -2,12 +2,12 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include "../Stockfish/src/bitboard.h"
-#include "../Stockfish/src/misc.h"
-#include "../Stockfish/src/position.h"
-#include "../Stockfish/src/types.h"
-#include "../Stockfish/src/uci.h"
-#include "../Stockfish/src/tune.h"
+#include "Stockfish/src/bitboard.h"
+#include "Stockfish/src/misc.h"
+#include "Stockfish/src/position.h"
+#include "Stockfish/src/types.h"
+#include "Stockfish/src/uci.h"
+#include "Stockfish/src/tune.h"
 
 #include "./include/multistockfish_chess/stockfish_nnue.h"
 
