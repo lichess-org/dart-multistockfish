@@ -16,8 +16,10 @@ Pod::Spec.new do |s|
   s.source = { :git => pubspec['repository'], :tag => s.version.to_s }
   s.source_files = [
     'multistockfish_chess/Sources/multistockfish_chess/*.{c,cc,cpp,h,hpp}',
+    'multistockfish_chess/Sources/multistockfish_chess/include/**/*.h',
     'multistockfish_chess/Sources/multistockfish_chess/Stockfish/src/**/*',
   ]
+  s.public_header_files = 'multistockfish_chess/Sources/multistockfish_chess/include/**/*.h'
   s.exclude_files = [
     'multistockfish_chess/Sources/multistockfish_chess/Stockfish/src/Makefile',
     'multistockfish_chess/Sources/multistockfish_chess/Stockfish/src/main.cpp',

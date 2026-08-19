@@ -58,11 +58,13 @@ let package = Package(
                 "Stockfish/.gitignore",
             ],
             cSettings: [
+                .headerSearchPath("include/multistockfish_chess"),
                 .headerSearchPath("Stockfish/src"),
                 .unsafeFlags(baseFlags),
                 .unsafeFlags(releaseFlags, .when(configuration: .release)),
             ],
             cxxSettings: [
+                .headerSearchPath("include/multistockfish_chess"),
                 .headerSearchPath("Stockfish/src"),
                 .unsafeFlags(baseFlags),
                 .unsafeFlags(releaseFlags, .when(configuration: .release)),
