@@ -18,19 +18,19 @@
 #ifdef __cplusplus
 extern "C" __attribute__((visibility("default"))) __attribute__((used))
 #endif
-FFI_PLUGIN_EXPORT int stockfish_init();
+FFI_PLUGIN_EXPORT int stockfish_sf16_init();
 
 #ifdef __cplusplus
 extern "C" __attribute__((visibility("default"))) __attribute__((used))
 #endif
-FFI_PLUGIN_EXPORT int stockfish_main();
+FFI_PLUGIN_EXPORT int stockfish_sf16_main();
 
 #ifdef __cplusplus
 extern "C" __attribute__((visibility("default"))) __attribute__((used))
 #endif
-FFI_PLUGIN_EXPORT ssize_t stockfish_stdin_write(char *data);
+FFI_PLUGIN_EXPORT ssize_t stockfish_sf16_stdin_write(char *data);
 
 #ifdef __cplusplus
 extern "C" __attribute__((visibility("default"))) __attribute__((used))
 #endif
-FFI_PLUGIN_EXPORT char * stockfish_stdout_read();
+FFI_PLUGIN_EXPORT char * stockfish_sf16_stdout_read();

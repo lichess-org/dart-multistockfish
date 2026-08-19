@@ -246,9 +246,25 @@ class Stockfish {
   }
 }
 
+// On iOS/macOS, each flavor's native package may be distributed either via
+// CocoaPods (built into its own `$libName.framework`, dynamically loaded and
+// linked into the app at launch) or via Swift Package Manager (whose local
+// package integration statically merges the object code straight into the
+// app binary instead of producing a separate framework). DynamicLibrary.open
+// only works for the former, but DynamicLibrary.process() resolves symbols
+// from *both*: dynamically linked frameworks are eagerly loaded into the
+// process at launch just like statically linked code is, so their exported
+// symbols are equally visible process-wide. Using it uniformly means this
+// code doesn't need to know which distribution mechanism produced a given
+// flavor, and keeps working as flavors migrate from one to the other.
+//
+// This relies on every flavor's exported C symbols being unique process-wide
+// (see [StockfishBindingsFFI]'s symbolPrefix) since a process-wide lookup
+// can't otherwise distinguish between multiple co-loaded flavors that
+// happen to export identically-named functions.
 DynamicLibrary _openDynamicLibrary(String libName) {
   if (Platform.isMacOS || Platform.isIOS) {
-    return DynamicLibrary.open('$libName.framework/$libName');
+    return DynamicLibrary.process();
   }
   if (Platform.isAndroid || Platform.isLinux) {
     return DynamicLibrary.open('lib$libName.so');
@@ -276,11 +292,13 @@ StockfishBindings _getBindings(StockfishFlavor flavor) {
     case StockfishFlavor.sf16:
       _sf16Bindings ??= StockfishBindingsFFI(
         _openDynamicLibrary('multistockfish_sf16'),
+        symbolPrefix: 'sf16',
       );
       return _sf16Bindings!;
     case StockfishFlavor.variant:
       _fairyBindings ??= StockfishBindingsFFI(
         _openDynamicLibrary('multistockfish_variant'),
+        symbolPrefix: 'variant',
       );
       return _fairyBindings!;
   }

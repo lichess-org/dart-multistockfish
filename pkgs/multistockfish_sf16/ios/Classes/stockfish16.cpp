@@ -54,7 +54,7 @@ const char *QUITOK = "quitok\n";
 int pipes[NUM_PIPES][2];
 char buffer[80];
 
-int stockfish_init()
+int stockfish_sf16_init()
 {
   pipe(pipes[PARENT_READ_PIPE]);
   pipe(pipes[PARENT_WRITE_PIPE]);
@@ -62,7 +62,7 @@ int stockfish_init()
   return 0;
 }
 
-int stockfish_main()
+int stockfish_sf16_main()
 {
   dup2(CHILD_READ_FD, STDIN_FILENO);
   dup2(CHILD_WRITE_FD, STDOUT_FILENO);
@@ -80,12 +80,12 @@ int stockfish_main()
   return exitCode;
 }
 
-ssize_t stockfish_stdin_write(char *data)
+ssize_t stockfish_sf16_stdin_write(char *data)
 {
   return write(PARENT_WRITE_FD, data, strlen(data));
 }
 
-char *stockfish_stdout_read()
+char *stockfish_sf16_stdout_read()
 {
   ssize_t count = read(PARENT_READ_FD, buffer, sizeof(buffer) - 1);
   if (count < 0)
