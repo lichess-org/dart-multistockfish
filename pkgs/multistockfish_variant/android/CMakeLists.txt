@@ -5,14 +5,14 @@ cmake_minimum_required(VERSION 3.10)
 
 project(multistockfish_variant_library VERSION 0.1.0 LANGUAGES CXX)
 
-file(GLOB_RECURSE cppPaths "../ios/Fairy-Stockfish-2b5d9512/src/*.cpp")
+file(GLOB_RECURSE cppPaths "../ios/multistockfish_variant/Sources/multistockfish_variant/Fairy-Stockfish-2b5d9512/src/*.cpp")
 
 list(FILTER cppPaths EXCLUDE REGEX "(pyffish|ffishjs).cpp")
 
 add_library(
   multistockfish_variant
   SHARED
-  ../ios/Classes/stockfish_variant.cpp
+  ../ios/multistockfish_variant/Sources/multistockfish_variant/stockfish_variant.cpp
   ${cppPaths}
 )
 
