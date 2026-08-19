@@ -30,7 +30,7 @@ let package = Package(
         .iOS("13.0"),
     ],
     products: [
-        .library(name: "multistockfish-chess", targets: ["multistockfish_chess"])
+        .library(name: "multistockfish-chess", type: .dynamic, targets: ["multistockfish_chess"])
     ],
     dependencies: [
         .package(name: "FlutterFramework", path: "../FlutterFramework")
