@@ -1,3 +1,7 @@
+## 0.4.0
+
+- Migrate to Swift Package Manager.
+
 ## 0.3.0
 
 - Update Stockfish to version 18.
