@@ -50,9 +50,9 @@ namespace Stockfish16Init {
   }
 }
 
-const char *QUITOK = "quitok\n";
-int pipes[NUM_PIPES][2];
-char buffer[80];
+static const char *QUITOK = "quitok\n";
+static int pipes[NUM_PIPES][2];
+static char buffer[80];
 
 int stockfish_sf16_init()
 {
