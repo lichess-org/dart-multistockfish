@@ -36,10 +36,18 @@ Pod::Spec.new do |s|
     'CLANG_CXX_LIBRARY' => 'libc++',
     'OTHER_CPLUSPLUSFLAGS' => '-std=c++17 -DUSE_PTHREADS -DIS_64BIT -DUSE_POPCNT',
     'OTHER_LDFLAGS' => '-std=c++17 -DUSE_PTHREADS -DIS_64BIT -DUSE_POPCNT',
-    'OTHER_CPLUSPLUSFLAGS[config=Profile]' => '$(inherited) -fno-exceptions -DNDEBUG -O3 -DUSE_NEON=8 -flto=full',
-    'OTHER_LDFLAGS[config=Profile]' => '$(inherited) -fno-exceptions -DNDEBUG -O3 -DUSE_NEON=8 -flto=full',
-    'OTHER_CPLUSPLUSFLAGS[config=Release]' => '$(inherited) -fno-exceptions -DNDEBUG -O3 -DUSE_NEON=8 -flto=full',
-    'OTHER_LDFLAGS[config=Release]' => '$(inherited) -fno-exceptions -DNDEBUG -O3 -DUSE_NEON=8 -flto=full',
+    # NOTE: no -flto here (unlike multistockfish_chess/multistockfish_variant).
+    # This package uniquely embeds its default NNUE net via
+    # `INCBIN(EmbeddedNNUE, ...)` (evaluate.cpp), an inline-assembly `.incbin`
+    # directive. Verified empirically that compiling that file under Xcode
+    # with any LTO mode (-flto/-flto=thin/-flto=full) fails with "Could not
+    # find incbin file", on both simulator and device target triples -
+    # LTO's bitcode compilation path doesn't run the integrated-assembler
+    # step `.incbin` needs.
+    'OTHER_CPLUSPLUSFLAGS[config=Profile]' => '$(inherited) -fno-exceptions -DNDEBUG -O3 -DUSE_NEON=8',
+    'OTHER_LDFLAGS[config=Profile]' => '$(inherited) -fno-exceptions -DNDEBUG -O3 -DUSE_NEON=8',
+    'OTHER_CPLUSPLUSFLAGS[config=Release]' => '$(inherited) -fno-exceptions -DNDEBUG -O3 -DUSE_NEON=8',
+    'OTHER_LDFLAGS[config=Release]' => '$(inherited) -fno-exceptions -DNDEBUG -O3 -DUSE_NEON=8',
   }
 
   s.script_phase = [

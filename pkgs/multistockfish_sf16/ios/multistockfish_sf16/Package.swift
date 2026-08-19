@@ -13,12 +13,22 @@ let baseFlags = [
 // Additional flags the podspec applies only to the Profile and Release
 // xcconfigs (SPM only distinguishes debug/release; Xcode treats a
 // Flutter "Profile" configuration as non-debug, so `.release` covers both).
+//
+// NOTE: unlike the other two packages, this deliberately omits the podspec's
+// `-flto=full`. This package (uniquely) embeds its default NNUE net via
+// `INCBIN(EmbeddedNNUE, ...)` in evaluate.cpp - inline assembly using a
+// `.incbin` directive. Verified empirically (both simulator and device
+// target triples, Xcode 26.3/clang 17): compiling that file with any LTO
+// mode (`-flto`, `-flto=thin`, `-flto=full`) makes Xcode's build fail with
+// "Could not find incbin file", regardless of search path - LTO's bitcode
+// compilation path doesn't run the same integrated-assembler step
+// `.incbin` needs. All other release flags below were individually and
+// jointly verified to compile clean without LTO.
 let releaseFlags = [
     "-fno-exceptions",
     "-DNDEBUG",
     "-O3",
     "-DUSE_NEON=8",
-    "-flto=full",
 ]
 
 let package = Package(
