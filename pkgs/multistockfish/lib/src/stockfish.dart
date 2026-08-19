@@ -23,6 +23,10 @@ const stockfishSpawnIsolatesKey = #_stockfishSpawnIsolates;
 /// Timeout duration to consider engine start failed.
 const kStartTimeout = Duration(seconds: 5);
 
+/// How long an engine that failed to start is given to exit after being asked
+/// to quit, before it is abandoned.
+const kQuitTimeout = Duration(seconds: 5);
+
 /// A Dart wrapper around the Stockfish chess engine.
 ///
 /// The engine is started in a separate isolate.
@@ -61,27 +65,14 @@ class Stockfish {
 
   final _state = _StockfishState();
   final _stdoutController = StreamController<String>.broadcast();
-  final _mainPort = ReceivePort('Stockfish main isolate port');
-  final _stdoutPort = ReceivePort('Stockfish stdout isolate port');
+
+  /// The engine currently owning the state, or null when none is running.
+  _RunningEngine? _engine;
 
   Future<void>? _pendingStart;
   Future<void>? _pendingQuit;
 
-  Stockfish._() {
-    _mainPort.listen((message) {
-      _logger.fine('The main isolate sent $message');
-      _onEngineExit(message is int ? message : 1);
-    });
-
-    _stdoutPort.listen((message) {
-      if (message is String) {
-        _logger.finest('[stdout] $message');
-        _stdoutController.sink.add(message);
-      } else {
-        _logger.fine('The stdout isolate sent $message');
-      }
-    });
-  }
+  Stockfish._();
 
   /// The current state of the underlying C++ engine.
   ValueListenable<StockfishState> get state => _state;
@@ -152,14 +143,26 @@ class Stockfish {
   }
 
   Future<void> _doStart() async {
+    late final _RunningEngine engine;
+    engine = _RunningEngine(
+      onExit: (exitCode) {
+        if (identical(_engine, engine)) _engine = null;
+        _onEngineExit(exitCode);
+      },
+      onStdout: _stdoutController.sink.add,
+    );
+    _engine = engine;
+
     final success = await _spawnIsolates(
-      _mainPort.sendPort,
-      _stdoutPort.sendPort,
+      engine.mainPort.sendPort,
+      engine.stdoutPort.sendPort,
       _flavor,
     );
 
     if (!success) {
       _logger.severe('Failed to spawn isolates');
+      _engine = null;
+      engine.dispose();
       _state._setValue(StockfishState.error);
       throw Exception('Failed to spawn isolates');
     }
@@ -176,10 +179,11 @@ class Stockfish {
       stdin = 'uci';
       await stdout.firstWhere((line) => line == "uciok").timeout(kStartTimeout);
     } on TimeoutException {
-      _state._setValue(StockfishState.error);
       _logger.severe(
         'The engine did not become ready in time (${kStartTimeout.inSeconds}s).',
       );
+      await _abandonEngine(engine);
+      _state._setValue(StockfishState.error);
       rethrow;
     }
 
@@ -239,10 +243,75 @@ class Stockfish {
     return completer.future;
   }
 
+  /// Asks an engine that failed to start to quit, and waits for it to exit.
+  ///
+  /// Waiting matters: [start] may be called again as soon as it throws, and an
+  /// engine still winding down would otherwise report its exit while its
+  /// successor is running, resetting the state of a perfectly healthy engine.
+  ///
+  /// An engine that does not exit within [kQuitTimeout] is given up on, but it
+  /// is disposed all the same so that whatever it sends afterwards is dropped.
+  Future<void> _abandonEngine(_RunningEngine engine) async {
+    _bindings.stdinWrite('quit\n');
+    try {
+      await engine.exited.future.timeout(kQuitTimeout);
+    } on TimeoutException {
+      _logger.severe(
+        'The engine did not exit in time (${kQuitTimeout.inSeconds}s) after a failed start.',
+      );
+    } finally {
+      if (identical(_engine, engine)) _engine = null;
+      engine.dispose();
+    }
+  }
+
   void _onEngineExit(int exitCode) {
     _state._setValue(
       exitCode == 0 ? StockfishState.initial : StockfishState.error,
     );
+  }
+}
+
+/// The ports of a single engine, and its lifetime.
+///
+/// Each engine gets its own ports so that closing them is enough to make an
+/// abandoned engine invisible to the [Stockfish] singleton.
+class _RunningEngine {
+  _RunningEngine({
+    required void Function(int exitCode) onExit,
+    required void Function(String line) onStdout,
+  }) {
+    mainPort.listen((message) {
+      _logger.fine('The main isolate sent $message');
+      dispose();
+      onExit(message is int ? message : 1);
+    });
+
+    stdoutPort.listen((message) {
+      if (message is String) {
+        _logger.finest('[stdout] $message');
+        onStdout(message);
+      } else {
+        _logger.fine('The stdout isolate sent $message');
+      }
+    });
+  }
+
+  final mainPort = ReceivePort('Stockfish main isolate port');
+  final stdoutPort = ReceivePort('Stockfish stdout isolate port');
+
+  /// Completes when the engine has exited, or when it is disposed.
+  final exited = Completer<void>();
+
+  bool _disposed = false;
+
+  /// Stops listening to this engine's isolates.
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    mainPort.close();
+    stdoutPort.close();
+    if (!exited.isCompleted) exited.complete();
   }
 }
 
