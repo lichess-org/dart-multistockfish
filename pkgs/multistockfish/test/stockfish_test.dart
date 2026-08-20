@@ -3,6 +3,7 @@ import 'dart:isolate';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:logging/logging.dart';
 import 'package:multistockfish/multistockfish.dart';
 import 'package:multistockfish/src/bindings.dart';
 
@@ -12,6 +13,16 @@ class MockStockfishBindings implements StockfishBindings {
   int initReturnValue = 0;
   int mainReturnValue = 0;
   void Function(String input)? onStdin;
+
+  /// The value [stdinWrite] reports. Negative values simulate a native write
+  /// failure, e.g. an input pipe that stayed full.
+  int stdinWriteReturnValue = 0;
+
+  /// The phase, step and error the mocked native library reports.
+  int phaseReturnValue = StockfishPhase.uciLoop.code;
+  String phaseStepReturnValue = 'uci_loop';
+  int phaseElapsedMsReturnValue = 0;
+  String? lastErrorReturnValue;
 
   @override
   int init() => initReturnValue;
@@ -23,11 +34,23 @@ class MockStockfishBindings implements StockfishBindings {
   int stdinWrite(String input) {
     stdinCalls.add(input);
     onStdin?.call(input);
-    return 0;
+    return stdinWriteReturnValue;
   }
 
   @override
   String? stdoutRead() => null;
+
+  @override
+  int phase() => phaseReturnValue;
+
+  @override
+  String phaseStep() => phaseStepReturnValue;
+
+  @override
+  int phaseElapsedMs() => phaseElapsedMsReturnValue;
+
+  @override
+  String? lastError() => lastErrorReturnValue;
 }
 
 /// A single simulated engine, holding the ports it was spawned with.
@@ -779,6 +802,265 @@ void main() {
           await restartFuture;
 
           expect(stockfish.state.value, StockfishState.ready);
+        });
+      },
+    );
+  });
+
+  group('StockfishPhase', () {
+    test('maps native codes, and unknown ones to unknown', () {
+      expect(StockfishPhase.fromCode(0), StockfishPhase.idle);
+      expect(StockfishPhase.fromCode(5), StockfishPhase.uciLoop);
+      expect(StockfishPhase.fromCode(6), StockfishPhase.shuttingDown);
+      expect(StockfishPhase.fromCode(-1), StockfishPhase.unknown);
+      expect(StockfishPhase.fromCode(42), StockfishPhase.unknown);
+    });
+
+    test('marks transitional phases, but not resting or terminal ones', () {
+      expect(StockfishPhase.engineBooting.isTransient, isTrue);
+      expect(StockfishPhase.shuttingDown.isTransient, isTrue);
+      expect(StockfishPhase.uciLoop.isTransient, isFalse);
+      expect(StockfishPhase.exited.isTransient, isFalse);
+      expect(StockfishPhase.unknown.isTransient, isFalse);
+    });
+  });
+
+  group('StockfishDiagnostics', () {
+    StockfishDiagnostics diagnostics({
+      required StockfishPhase phase,
+      required Duration elapsed,
+      String step = 'step',
+      String? lastError,
+    }) => StockfishDiagnostics(
+      phase: phase,
+      step: step,
+      elapsed: elapsed,
+      lastError: lastError,
+    );
+
+    test('flags a transitional phase that has lasted too long as stuck', () {
+      expect(
+        diagnostics(
+          phase: StockfishPhase.shuttingDown,
+          elapsed: const Duration(seconds: 30),
+        ).looksStuck,
+        isTrue,
+      );
+    });
+
+    test(
+      'does not flag a brief transition, or a long rest in the UCI loop',
+      () {
+        expect(
+          diagnostics(
+            phase: StockfishPhase.shuttingDown,
+            elapsed: const Duration(milliseconds: 20),
+          ).looksStuck,
+          isFalse,
+        );
+        expect(
+          diagnostics(
+            phase: StockfishPhase.uciLoop,
+            elapsed: const Duration(hours: 1),
+          ).looksStuck,
+          isFalse,
+        );
+      },
+    );
+
+    test('describes the phase, step, duration and native error', () {
+      final text =
+          diagnostics(
+            phase: StockfishPhase.shuttingDown,
+            step: 'thread_pool_teardown',
+            elapsed: const Duration(seconds: 12),
+            lastError: 'main: refused',
+          ).toString();
+
+      expect(text, contains('phase=shuttingDown'));
+      expect(text, contains('step=thread_pool_teardown'));
+      expect(text, contains('12000ms'));
+      expect(text, contains('STUCK'));
+      expect(text, contains('main: refused'));
+    });
+  });
+
+  group('native code descriptions', () {
+    test('name the failure a wedged restart produces', () {
+      expect(describeInitCode(-2), contains('never exited'));
+      expect(describeMainExitCode(-1), contains('already running'));
+    });
+
+    test('distinguish a rejected write from a corrupting one', () {
+      expect(describeWriteCode(-3), contains('stopped reading'));
+      expect(describeWriteCode(-4), contains('corrupt'));
+      expect(describeWriteCode(12), contains('12 bytes'));
+    });
+  });
+
+  group('Stockfish.diagnostics', () {
+    test('reports what the native library publishes', () async {
+      final controller = MockEngineController();
+      controller.bindings
+        ..phaseReturnValue = StockfishPhase.engineBooting.code
+        ..phaseStepReturnValue = 'nnue'
+        ..phaseElapsedMsReturnValue = 7000
+        ..lastErrorReturnValue = 'init: discarded 3 stale byte(s)';
+
+      await runWithMockStockfish(controller, () {
+        final diagnostics = Stockfish.instance.diagnostics;
+
+        expect(diagnostics.phase, StockfishPhase.engineBooting);
+        expect(diagnostics.step, 'nnue');
+        expect(diagnostics.elapsed, const Duration(seconds: 7));
+        expect(diagnostics.lastError, 'init: discarded 3 stale byte(s)');
+        expect(diagnostics.looksStuck, isTrue);
+      });
+    });
+
+    test('says where a start stalled when it times out', () async {
+      final controller = MockEngineController();
+      controller.bindings
+        ..phaseReturnValue = StockfishPhase.engineBooting.code
+        ..phaseStepReturnValue = 'nnue'
+        ..phaseElapsedMsReturnValue = 6000;
+
+      await runWithMockStockfish(controller, () {
+        fakeAsync((async) {
+          Object? caughtError;
+
+          Stockfish.instance.start().catchError((e) {
+            caughtError = e;
+            return null;
+          });
+
+          async.flushMicrotasks();
+          async.elapse(
+            kStartTimeout + kQuitTimeout + const Duration(seconds: 1),
+          );
+
+          expect(caughtError, isA<TimeoutException>());
+          expect(caughtError.toString(), contains('phase=engineBooting'));
+          expect(caughtError.toString(), contains('step=nnue'));
+
+          controller.exit(0);
+          async.flushMicrotasks();
+        });
+      });
+    });
+
+    test('logs a failed stdin write instead of throwing', () async {
+      final controller = MockEngineController();
+      final records = <LogRecord>[];
+
+      final previousLevel = Logger.root.level;
+      Logger.root.level = Level.ALL;
+      final subscription = Logger.root.onRecord.listen(records.add);
+      addTearDown(() {
+        subscription.cancel();
+        Logger.root.level = previousLevel;
+      });
+
+      await runWithMockStockfish(controller, () async {
+        final stockfish = Stockfish.instance;
+        final startFuture = stockfish.start();
+        await controller.simulateStartup();
+        await startFuture;
+
+        // The input pipe stayed full: the engine has stopped reading.
+        controller.bindings.stdinWriteReturnValue = -3;
+        controller.bindings.phaseReturnValue = StockfishPhase.uciLoop.code;
+
+        // Must not throw — a broken engine should not turn every command site
+        // into a try/catch.
+        expect(() => stockfish.stdin = 'go movetime 1000', returnsNormally);
+
+        final severe = records.where((r) => r.level >= Level.SEVERE);
+        expect(severe, isNotEmpty);
+        expect(severe.last.message, contains('go movetime 1000'));
+        expect(severe.last.message, contains('stopped reading'));
+
+        // Nothing was written, so the command stream is still coherent and the
+        // engine stays usable.
+        expect(stockfish.state.value, StockfishState.ready);
+      });
+    });
+
+    test('a partial write fails the engine so later commands throw', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final stockfish = Stockfish.instance;
+        final startFuture = stockfish.start();
+        await controller.simulateStartup();
+        await startFuture;
+
+        // Half a command reached the pipe: everything sent afterwards would
+        // concatenate onto that fragment.
+        controller.bindings.stdinWriteReturnValue =
+            StockfishWriteResult.partial;
+
+        stockfish.stdin = 'go movetime 1000';
+
+        expect(stockfish.state.value, StockfishState.error);
+        expect(
+          () => stockfish.stdin = 'stop',
+          throwsStateError,
+          reason: 'the session is over; commands must not keep flowing',
+        );
+      });
+    });
+
+    test('can restart after a partial write kills the session', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final stockfish = Stockfish.instance;
+        final startFuture = stockfish.start();
+        await controller.simulateStartup();
+        await startFuture;
+
+        controller.bindings.stdinWriteReturnValue =
+            StockfishWriteResult.partial;
+        stockfish.stdin = 'go movetime 1000';
+        expect(stockfish.state.value, StockfishState.error);
+
+        // A restart is the documented recovery, and start() accepts the error
+        // state.
+        controller.bindings.stdinWriteReturnValue = 0;
+        controller.exit(0);
+        await Future<void>.delayed(Duration.zero);
+
+        final restartFuture = stockfish.start();
+        await controller.simulateStartup();
+        await restartFuture;
+
+        expect(stockfish.state.value, StockfishState.ready);
+      });
+    });
+
+    test(
+      'a quit that cannot be delivered gives up instead of hanging',
+      () async {
+        final controller = MockEngineController();
+
+        await runWithMockStockfish(controller, () async {
+          final stockfish = Stockfish.instance;
+          final startFuture = stockfish.start();
+          await controller.simulateStartup();
+          await startFuture;
+
+          // The engine has stopped reading, so it will never see "quit" and will
+          // never report an exit.
+          controller.bindings.stdinWriteReturnValue = -3;
+
+          await stockfish.quit().timeout(
+            const Duration(seconds: 2),
+            onTimeout:
+                () => fail('quit() hung waiting for an unreachable engine'),
+          );
+
+          expect(stockfish.state.value, StockfishState.error);
         });
       },
     );

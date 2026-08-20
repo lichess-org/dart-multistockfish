@@ -56,6 +56,30 @@ class _AppState extends State<MyApp> {
 
   NNUEFiles? _nnueFiles;
 
+  /// The engine's native phase, polled rather than listened to: it changes on a
+  /// thread Dart does not own, and the whole point is to keep reporting while
+  /// the engine is wedged and sending no events at all.
+  final ValueNotifier<StockfishDiagnostics?> _diagnostics = ValueNotifier(null);
+  Timer? _diagnosticsTimer;
+  StockfishPhase? _lastPhase;
+  String? _lastStep;
+
+  /// Publishes the engine's phase when it moves, and only then.
+  ///
+  /// The exception is a transitional phase: there the elapsed time is the whole
+  /// signal, because a boot or a shutdown that keeps counting is a wedged
+  /// engine. Sitting in the UCI loop or after exit, it is just a number going up.
+  void _pollDiagnostics() {
+    final next = stockfish.diagnostics;
+    final moved = next.phase != _lastPhase || next.step != _lastStep;
+
+    if (!moved && !next.phase.isTransient) return;
+
+    _lastPhase = next.phase;
+    _lastStep = next.step;
+    _diagnostics.value = next;
+  }
+
   static const _variants = [
     '3check',
     'crazyhouse',
@@ -70,6 +94,17 @@ class _AppState extends State<MyApp> {
   void initState() {
     super.initState();
     _fetchNNUEFiles();
+    _diagnosticsTimer = Timer.periodic(
+      const Duration(milliseconds: 500),
+      (_) => _pollDiagnostics(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _diagnosticsTimer?.cancel();
+    _diagnostics.dispose();
+    super.dispose();
   }
 
   Future<void> _startStockfish() async {
@@ -231,6 +266,30 @@ class _AppState extends State<MyApp> {
                           'stockfish.state=${stockfish.state.value}',
                           key: const ValueKey('stockfish.state'),
                         ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                  child: ValueListenableBuilder<StockfishDiagnostics?>(
+                    valueListenable: _diagnostics,
+                    builder: (context, diagnostics, _) {
+                      if (diagnostics == null) return const SizedBox.shrink();
+                      return Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          diagnostics.toString(),
+                          key: const ValueKey('stockfish.diagnostics'),
+                          style: TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 11,
+                            color:
+                                diagnostics.looksStuck
+                                    ? Theme.of(context).colorScheme.error
+                                    : Theme.of(context).hintColor,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
                 Padding(
