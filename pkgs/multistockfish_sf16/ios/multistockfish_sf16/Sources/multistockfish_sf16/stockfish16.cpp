@@ -15,12 +15,12 @@
 #include "Stockfish16/src/position.h"
 #include "Stockfish16/src/psqt.h"
 #include "Stockfish16/src/search.h"
-#include "Stockfish16/src/sfio.h"
 #include "Stockfish16/src/syzygy/tbprobe.h"
 #include "Stockfish16/src/thread.h"
 #include "Stockfish16/src/tt.h"
 #include "Stockfish16/src/uci.h"
 
+#include "sfio.h"
 #include "./include/multistockfish_sf16/stockfish16.h"
 
 // https://jineshkj.wordpress.com/2006/12/22/how-to-capture-stdin-stdout-and-stderr-of-child-program/

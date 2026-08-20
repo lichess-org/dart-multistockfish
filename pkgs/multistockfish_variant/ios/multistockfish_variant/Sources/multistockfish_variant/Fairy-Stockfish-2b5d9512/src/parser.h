@@ -21,7 +21,6 @@
 
 #include <iostream>
 
-#include "sfio.h"
 #include "variant.h"
 
 namespace FairyStockfish {
@@ -31,7 +30,7 @@ public:
     Config::iterator find (const std::string& s) {
         constexpr bool PrintOptions = false; // print config options?
         if (PrintOptions)
-            sfio::out() << s << std::endl;
+            std::cout << s << std::endl;
         consumedKeys.insert(s);
         return std::map<std::string, std::string>::find(s);
     }

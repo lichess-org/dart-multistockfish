@@ -13,11 +13,11 @@
 #include "Stockfish/src/bitboard.h"
 #include "Stockfish/src/misc.h"
 #include "Stockfish/src/position.h"
-#include "Stockfish/src/sfio.h"
 #include "Stockfish/src/types.h"
 #include "Stockfish/src/uci.h"
 #include "Stockfish/src/tune.h"
 
+#include "sfio.h"
 #include "./include/multistockfish_chess/stockfish_nnue.h"
 
 // https://jineshkj.wordpress.com/2006/12/22/how-to-capture-stdin-stdout-and-stderr-of-child-program/

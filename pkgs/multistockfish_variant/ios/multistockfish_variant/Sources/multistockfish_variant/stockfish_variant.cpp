@@ -15,7 +15,6 @@
 #include "Fairy-Stockfish-2b5d9512/src/position.h"
 #include "Fairy-Stockfish-2b5d9512/src/psqt.h"
 #include "Fairy-Stockfish-2b5d9512/src/search.h"
-#include "Fairy-Stockfish-2b5d9512/src/sfio.h"
 #include "Fairy-Stockfish-2b5d9512/src/syzygy/tbprobe.h"
 #include "Fairy-Stockfish-2b5d9512/src/thread.h"
 #include "Fairy-Stockfish-2b5d9512/src/tt.h"
@@ -24,6 +23,7 @@
 #include "Fairy-Stockfish-2b5d9512/src/variant.h"
 #include "Fairy-Stockfish-2b5d9512/src/xboard.h"
 
+#include "sfio.h"
 #include "./include/multistockfish_variant/stockfish_variant.h"
 
 // https://jineshkj.wordpress.com/2006/12/22/how-to-capture-stdin-stdout-and-stderr-of-child-program/

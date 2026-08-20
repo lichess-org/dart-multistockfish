@@ -11,6 +11,7 @@ add_library(
   multistockfish_chess
   SHARED
   ../ios/multistockfish_chess/Sources/multistockfish_chess/stockfish_nnue.cpp
+  ../ios/multistockfish_chess/Sources/multistockfish_chess/sfio.cpp
   ${sf17Paths}
 )
 

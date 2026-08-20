@@ -9,21 +9,29 @@
   engines' output arrived in one channel -- and the host application lost its own
   stdout for as long as an engine was running.
 
-  These two streams replace std::cin and std::cout throughout this library. The
-  shim binds them to its pipe with bind(), in place of the dup2 it used to do, so
-  this engine's input and output reach this engine's pipe and nothing else's.
+  These two streams replace std::cin and std::cout inside the engine. The shim
+  binds them to its pipe with bind(), in place of the dup2 it used to do, so this
+  engine's input and output reach this engine's pipe and nothing else's.
 
   Until bind() is called they read and write the process's standard descriptors,
   which keeps a plain command-line build of the engine working unchanged.
+
+  This file and sfio.cpp are identical in all three native packages. Only
+  sfio_config.h differs, and the namespace it names is what keeps each flavour's
+  streams its own. The engine's misc.h declares in() and out() a second time,
+  inside the engine namespace, so that sync_cout can reach them without the
+  vendored sources needing to include anything from the plugin.
 */
 
-#ifndef SF18_SFIO_H_INCLUDED
-#define SF18_SFIO_H_INCLUDED
+#ifndef SFIO_H_INCLUDED
+#define SFIO_H_INCLUDED
 
 #include <istream>
 #include <ostream>
 
-namespace Stockfish {
+#include "sfio_config.h"
+
+namespace SFIO_NAMESPACE {
 namespace sfio {
 
 // This engine's input. Every command it will ever execute is read from here.
@@ -45,6 +53,6 @@ std::ostream& out();
 bool bind(int read_fd, int write_fd);
 
 }  // namespace sfio
-}  // namespace Stockfish
+}  // namespace SFIO_NAMESPACE
 
-#endif  // #ifndef SF18_SFIO_H_INCLUDED
+#endif  // #ifndef SFIO_H_INCLUDED

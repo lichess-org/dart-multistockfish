@@ -27,6 +27,7 @@ echo "Building..."
   -Wno-writable-strings \
   -o "$out/shim_test" \
   "$sources/stockfish_variant.cpp" \
+  "$sources/sfio.cpp" \
   "$here/shim_test.cpp" \
   $engine_sources
 

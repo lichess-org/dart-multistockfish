@@ -9,7 +9,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-namespace Stockfish {
+namespace SFIO_NAMESPACE {
 namespace sfio {
 
 namespace {
@@ -194,4 +194,4 @@ bool bind(int read_fd, int write_fd) {
 }
 
 }  // namespace sfio
-}  // namespace Stockfish
+}  // namespace SFIO_NAMESPACE

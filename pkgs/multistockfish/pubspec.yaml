@@ -16,15 +16,15 @@ dependencies:
     sdk: flutter
   logging: ^1.3.0
   plugin_platform_interface: ^2.0.2
-  multistockfish_sf16: ^0.3.0
-  multistockfish_chess: ^0.5.0
-  multistockfish_variant: ^0.3.0
-  # multistockfish_sf16:
-  #   path: ../multistockfish_sf16
-  # multistockfish_chess:
-  #   path: ../multistockfish_chess
-  # multistockfish_variant:
-  #   path: ../multistockfish_variant
+  # multistockfish_sf16: ^0.4.0
+  # multistockfish_chess: ^0.6.0
+  # multistockfish_variant: ^0.4.0
+  multistockfish_sf16:
+    path: ../multistockfish_sf16
+  multistockfish_chess:
+    path: ../multistockfish_chess
+  multistockfish_variant:
+    path: ../multistockfish_variant
 
 dev_dependencies:
   fake_async: ^1.3.2

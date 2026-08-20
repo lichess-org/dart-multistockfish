@@ -37,8 +37,6 @@
 #include <type_traits>
 #include <vector>
 
-#include "sfio.h"
-
 #define stringify2(x) #x
 #define stringify(x) stringify2(x)
 
@@ -121,9 +119,17 @@ enum SyncCout {
 };
 std::ostream& operator<<(std::ostream&, SyncCout);
 
-// Output goes to this library's own stream rather than the process's stdout, so
-// that two flavours can be resident at once without their output interleaving.
-#define sync_cout ::Stockfish::sfio::out() << IO_LOCK
+// multistockfish: this library's private I/O, defined in the plugin's sfio.cpp
+// alongside the shim. It replaces std::cin and std::cout so that more than one
+// flavour of the engine can be resident in a process without sharing the
+// standard descriptors. Declared here rather than included, so the vendored
+// sources never reach into the plugin directory.
+namespace sfio {
+std::istream& in();
+std::ostream& out();
+}
+
+#define sync_cout sfio::out() << IO_LOCK
 #define sync_endl std::endl << IO_UNLOCK
 
 void sync_cout_start();

@@ -32,7 +32,7 @@ common=(-std=c++17 -O1 -DUSE_PTHREADS -DIS_64BIT -DUSE_POPCNT -DNDEBUG -Wno-writ
 # .incbin, Fairy-Stockfish is built without one -- so they cannot share a single
 # compiler invocation. Compile each to objects, then link them together.
 echo "Building sf16..."
-for f in "$sf16/stockfish16.cpp" \
+for f in "$sf16/stockfish16.cpp" "$sf16/sfio.cpp" \
          $(find "$sf16/Stockfish16/src" -name '*.cpp' ! -name 'main.cpp'); do
   "$CXX" "${common[@]}" \
     -I"$sf16" -I"$sf16/Stockfish16/src" -I"$sf16/include/multistockfish_sf16" -I"$sf16/nnue" \
@@ -40,7 +40,7 @@ for f in "$sf16/stockfish16.cpp" \
 done
 
 echo "Building variant..."
-for f in "$variant/stockfish_variant.cpp" \
+for f in "$variant/stockfish_variant.cpp" "$variant/sfio.cpp" \
          $(find "$variant/Fairy-Stockfish-2b5d9512/src" -name '*.cpp' \
              ! -name 'main.cpp' ! -name 'pyffish.cpp' ! -name 'ffishjs.cpp'); do
   "$CXX" "${common[@]}" -DNNUE_EMBEDDING_OFF \
