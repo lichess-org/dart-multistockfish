@@ -1,5 +1,53 @@
 ## 0.6.0
 
+**Breaking changes — per-flavour engine handles:**
+
+An engine is now a handle you create and dispose, rather than a process-wide
+singleton you start and quit. **The handle is the flavour**: at most one engine
+per `StockfishFlavor` can be live at a time, and engines of *different* flavours
+are independent and can run side by side — each with its own `stdin`, `stdout`,
+`state` and `diagnostics`. Running an NNUE engine for analysis while
+Fairy-Stockfish plays an opponent no longer means restarting one to get the
+other.
+
+- Add `Stockfish.create()`, which starts an engine of one flavour and completes
+  when it is ready for commands, and `dispose()`, which quits it and frees the
+  flavour's slot. `create()` throws a `StateError` while another engine of the
+  same flavour holds the slot.
+- A slot stays taken until `dispose()` is called, *including* after the engine
+  has died on its own: the handle is the caller's to release.
+- A handle is single use. `state` moves to `StockfishState.error` if the engine
+  dies, and to the new `StockfishState.disposed` once `dispose()` completes;
+  neither is recoverable on that handle. `stdout` closes on dispose, so it no
+  longer persists across a restart — the replacement engine has its own.
+- `dispose()` gives up on an engine that will not exit within 5 seconds instead
+  of waiting for it forever, and frees the slot regardless.
+- `create()` now fails as soon as the engine exits during startup — a start the
+  native library refused is reported in milliseconds with the exit code, rather
+  than as a timeout five seconds later.
+- `Stockfish.instance`, `start()` and `quit()` still work but are deprecated and
+  will be removed in the next release. The singleton competes for the same
+  per-flavour slots as `create()`, so the two APIs can be mixed during a
+  migration without ending up with two engines of one flavour.
+
+**Migration:**
+
+```dart
+// Before
+final stockfish = Stockfish.instance;
+await stockfish.start(flavor: StockfishFlavor.variant, variant: 'atomic');
+stockfish.stdin = 'go movetime 1000';
+await stockfish.quit();
+
+// After
+final stockfish = await Stockfish.create(
+  flavor: StockfishFlavor.variant,
+  variant: 'atomic',
+);
+stockfish.stdin = 'go movetime 1000';
+await stockfish.dispose();
+```
+
 - Add Swift Package Manager support for iOS.
 
 **Engine lifecycle fixes** (in the native packages, via the bumped constraints
