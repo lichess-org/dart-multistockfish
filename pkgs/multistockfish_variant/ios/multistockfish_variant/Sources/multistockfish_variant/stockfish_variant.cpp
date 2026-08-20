@@ -310,7 +310,7 @@ int stockfish_variant_main()
     return SF_MAIN_ALREADY_RUNNING;
   }
 
-  set_phase(SF_PHASE_BINDING_STREAMS, "bind_streams");
+  set_phase(SF_PHASE_REDIRECTING, "bind_streams");
 
   // The engine reads and writes streams this library owns, so this points them
   // at its own end of the pipe. It replaces a dup2 onto fd 0 and fd 1, which
@@ -323,7 +323,7 @@ int stockfish_variant_main()
     set_phase(SF_PHASE_FAILED, "bind_failed");
     signal_quit();
     g_running.store(false, std::memory_order_release);
-    return SF_MAIN_BIND_FAILED;
+    return SF_MAIN_DUP2_FAILED;
   }
 
   // The child-side descriptors stay open for the lifetime of the process: the

@@ -5,12 +5,9 @@
   bound straight to its own pipe. Two flavours can therefore be resident at the
   same time without their output landing in one channel, and the host
   application keeps its own `stdout` while an engine is running.
-- **Breaking:** `SF_PHASE_REDIRECTING` and `SF_MAIN_DUP2_FAILED` are renamed to
-  `SF_PHASE_BINDING_STREAMS` and `SF_MAIN_BIND_FAILED`. Their numeric values are
-  unchanged, so the values crossing the FFI boundary are the same; only the
-  macro names differ.
-- Report an error instead of running when the engine's streams cannot be bound
-  to the pipe, in place of the previous `dup2` failure.
+- `SF_MAIN_DUP2_FAILED` is now reported when the engine's input and output cannot
+  be attached to its pipes. Every constant keeps its name and its value; only the
+  mechanism behind that failure changed.
 
 ## 0.5.0
 
