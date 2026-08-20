@@ -1,10 +1,19 @@
+## 0.4.0
+
+- **Breaking:** the engine no longer redirects the process's `stdin` and
+  `stdout` onto its pipe. Each library now reads and writes streams of its own,
+  bound straight to its own pipe. Two flavours can therefore be resident at the
+  same time without their output landing in one channel, and the host
+  application keeps its own `stdout` while an engine is running.
+- **Breaking:** `SF_PHASE_REDIRECTING` and `SF_MAIN_DUP2_FAILED` are renamed to
+  `SF_PHASE_BINDING_STREAMS` and `SF_MAIN_BIND_FAILED`. Their numeric values are
+  unchanged, so the values crossing the FFI boundary are the same; only the
+  macro names differ.
+- Report an error instead of running when the engine's streams cannot be bound
+  to the pipe, in place of the previous `dup2` failure.
+
 ## 0.3.0
 
-- Give the engine its own input and output streams, bound straight to this
-  library's pipe, instead of redirecting the process's `stdin` and `stdout` onto
-  it. Two flavours can now be resident at the same time without their output
-  landing in one channel, and the host application keeps its own `stdout` while
-  an engine is running.
 - Refuse to run a second engine while one is still alive, instead of racing it
   over the engine's process-global state.
 - Reuse the communication pipes across restarts instead of allocating a new pair
@@ -16,9 +25,8 @@
 - Report failures through `last_error()`, and the engine's lifecycle position
   through `phase()`, `phase_step()` and `phase_elapsed_ms()`, so an engine that
   will not start or will not quit can say where it is stuck.
-- Report an error instead of running when the engine's streams cannot be bound
-  to the pipe, when the engine throws, or when the output pipe reaches end of
-  file (which previously spun the reader).
+- Report an error instead of running when `dup2` fails, when the engine throws,
+  or when the output pipe reaches end of file (which previously spun the reader).
 
 ## 0.2.0
 
