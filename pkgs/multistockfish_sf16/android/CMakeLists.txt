@@ -11,6 +11,7 @@ add_library(
   multistockfish_sf16
   SHARED
   ../ios/multistockfish_sf16/Sources/multistockfish_sf16/stockfish16.cpp
+  ../ios/multistockfish_sf16/Sources/multistockfish_sf16/sfio.cpp
   ${sf16Paths}
 )
 

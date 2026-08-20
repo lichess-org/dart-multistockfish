@@ -18,7 +18,7 @@ enum StockfishPhase {
   /// The pipes are ready and the engine is waiting to be run.
   initialized(2),
 
-  /// The engine is redirecting the standard descriptors onto its pipes.
+  /// The engine is attaching its input and output to its pipes.
   redirecting(3),
 
   /// The engine is running its own global initialization: lookup tables, the
@@ -134,7 +134,7 @@ String describeMainExitCode(int code) => switch (code) {
   0 => 'clean exit',
   -1 => 'refused: an engine is already running',
   -2 => 'called before a successful init',
-  -3 => 'dup2() onto the standard descriptors failed',
+  -3 => "the engine's input and output could not be attached to its pipes",
   -4 => 'the engine threw an exception',
   _ when code > 0 => 'engine exit code $code',
   _ => 'unknown exit code ($code)',

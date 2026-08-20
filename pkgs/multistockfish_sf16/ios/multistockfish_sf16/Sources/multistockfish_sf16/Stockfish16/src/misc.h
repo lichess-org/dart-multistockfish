@@ -67,7 +67,17 @@ private:
 enum SyncCout { IO_LOCK, IO_UNLOCK };
 std::ostream& operator<<(std::ostream&, SyncCout);
 
-#define sync_cout std::cout << IO_LOCK
+// multistockfish: this library's private I/O, defined in the plugin's sfio.cpp
+// alongside the shim. It replaces std::cin and std::cout so that more than one
+// flavour of the engine can be resident in a process without sharing the
+// standard descriptors. Declared here rather than included, so the vendored
+// sources never reach into the plugin directory.
+namespace sfio {
+std::istream& in();
+std::ostream& out();
+}
+
+#define sync_cout sfio::out() << IO_LOCK
 #define sync_endl std::endl << IO_UNLOCK
 
 

@@ -58,7 +58,7 @@ void UCIEngine::print_info_string(std::string_view str) {
     {
         if (!is_whitespace(line))
         {
-            std::cout << "info string " << line << '\n';
+            sfio::out() << "info string " << line << '\n';
         }
     }
     sync_cout_end();
@@ -94,7 +94,7 @@ void UCIEngine::loop() {
     do
     {
         if (cli.argc == 1
-            && !getline(std::cin, cmd))  // Wait for an input or an end-of-file (EOF) indication
+            && !getline(sfio::in(), cmd))  // Wait for an input or an end-of-file (EOF) indication
             cmd = "quit";
 
         std::istringstream is(cmd);
@@ -654,8 +654,8 @@ void UCIEngine::on_iter(const Engine::InfoIter& info) {
 void UCIEngine::on_bestmove(std::string_view bestmove, std::string_view ponder) {
     sync_cout << "bestmove " << bestmove;
     if (!ponder.empty())
-        std::cout << " ponder " << ponder;
-    std::cout << sync_endl;
+        sfio::out() << " ponder " << ponder;
+    sfio::out() << sync_endl;
 }
 
 }  // namespace Stockfish

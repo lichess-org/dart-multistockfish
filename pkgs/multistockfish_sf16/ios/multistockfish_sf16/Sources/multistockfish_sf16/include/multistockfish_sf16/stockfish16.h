@@ -25,7 +25,7 @@
 #define SF_PHASE_IDLE 0           // library loaded, init() not called yet
 #define SF_PHASE_INITIALIZING 1   // creating the pipes
 #define SF_PHASE_INITIALIZED 2    // pipes ready, waiting for main()
-#define SF_PHASE_REDIRECTING 3    // inside main(), redirecting the descriptors
+#define SF_PHASE_REDIRECTING 3    // inside main(), attaching the engine I/O to its pipes
 #define SF_PHASE_ENGINE_BOOTING 4 // engine global init (tables, NNUE, threads)
 #define SF_PHASE_UCI_LOOP 5       // inside UCI::loop, accepting commands
 #define SF_PHASE_SHUTTING_DOWN 6  // loop returned, joining the thread pool
@@ -41,7 +41,7 @@
 // engine's own exit code.
 #define SF_MAIN_ALREADY_RUNNING (-1)
 #define SF_MAIN_NOT_INITIALIZED (-2)
-#define SF_MAIN_DUP2_FAILED (-3)
+#define SF_MAIN_DUP2_FAILED (-3)  // the engine I/O could not be attached to its pipes
 #define SF_MAIN_ENGINE_THREW (-4)
 
 // Error codes returned by stockfish_sf16_stdin_write(). Non-negative values are
