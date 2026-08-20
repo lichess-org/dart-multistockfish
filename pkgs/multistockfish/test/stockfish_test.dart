@@ -655,7 +655,11 @@ void main() {
           onTimeout: () => fail('dispose() hung on a dead engine'),
         );
 
-        expect(engine.state.value, StockfishState.disposed);
+        expect(
+          engine.state.value,
+          StockfishState.error,
+          reason: 'disposing a failed engine is not what went wrong',
+        );
         expect(Stockfish.debugLiveEngines, isEmpty);
       });
     });
@@ -811,26 +815,46 @@ void main() {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final future = Stockfish.create();
+        final engine = await createEngine(controller);
         final lines = <String>[];
-
-        // The engine exists as soon as create() has claimed the slot and
-        // spawned it, so a listener can be attached before it is ready.
-        controller.emitStdout('Stockfish 16');
-        await Future.delayed(Duration.zero);
-        expect(controller.bindings.stdinCalls.lastOrNull, 'uci\n');
-
-        final engine = Stockfish.debugLiveEngines[StockfishFlavor.sf16]!;
         engine.stdout.listen(lines.add);
 
-        controller.emitStdout('id name Stockfish');
-        controller.emitStdout('uciok');
-        await future;
+        controller.emitStdout('info depth 12');
+        controller.emitStdout('bestmove e2e4');
         await Future.delayed(Duration.zero);
 
-        expect(lines, containsAll(['id name Stockfish', 'uciok']));
+        expect(lines, ['info depth 12', 'bestmove e2e4']);
       });
     });
+
+    test(
+      'onStdout sees the startup output stdout has already missed',
+      () async {
+        final controller = MockEngineController();
+
+        await runWithMockStockfish(controller, () async {
+          final fromCreate = <String>[];
+          final future = Stockfish.create(onStdout: fromCreate.add);
+          await controller.simulateStartup();
+          final engine = await future;
+
+          // create() only completes once the engine is ready, so a listener
+          // attached to stdout here is already too late for the banner.
+          final fromStdout = <String>[];
+          engine.stdout.listen(fromStdout.add);
+          await Future.delayed(Duration.zero);
+
+          expect(fromCreate, ['Stockfish 16', 'uciok']);
+          expect(fromStdout, isEmpty);
+
+          // It keeps receiving for the engine's whole life, though.
+          controller.emitStdout('bestmove e2e4');
+          await Future.delayed(Duration.zero);
+          expect(fromCreate, contains('bestmove e2e4'));
+          expect(fromStdout, ['bestmove e2e4']);
+        });
+      },
+    );
   });
 
   group('Stockfish.state', () {
@@ -849,13 +873,38 @@ void main() {
         expect(states, [StockfishState.error]);
         expect(() => engine.stdin = 'isready', throwsStateError);
 
-        // The slot is the caller's to release, so a replacement is refused
-        // until the dead handle is disposed.
-        await expectLater(Stockfish.create(), throwsStateError);
-        await engine.dispose();
-
+        // The engine is gone, so its flavor is free: a replacement does not
+        // have to wait for the dead handle to be disposed.
+        expect(Stockfish.debugLiveEngines, isEmpty);
         final replacement = await createEngine(controller);
         expect(replacement.state.value, StockfishState.ready);
+      });
+    });
+
+    test('an engine sent `quit` ends as disposed, not as an error', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final engine = await createEngine(controller);
+        final states = <StockfishState>[];
+        engine.state.addListener(() => states.add(engine.state.value));
+
+        // Quitting over stdin is a supported way to stop an engine, and the
+        // engine exits cleanly: nothing failed.
+        engine.stdin = 'quit';
+        controller.exit(0);
+        await Future.delayed(Duration.zero);
+
+        expect(engine.state.value, StockfishState.disposed);
+        expect(states, [StockfishState.disposed]);
+        expect(Stockfish.debugLiveEngines, isEmpty);
+
+        // Disposing afterwards is a no-op that completes.
+        await engine.dispose().timeout(
+          const Duration(seconds: 2),
+          onTimeout: () => fail('dispose() hung on an engine that had quit'),
+        );
+        expect(engine.state.value, StockfishState.disposed);
       });
     });
   });

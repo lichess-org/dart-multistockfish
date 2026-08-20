@@ -14,12 +14,18 @@ other.
   when it is ready for commands, and `dispose()`, which quits it and frees the
   flavour's slot. `create()` throws a `StateError` while another engine of the
   same flavour holds the slot.
-- A slot stays taken until `dispose()` is called, *including* after the engine
-  has died on its own: the handle is the caller's to release.
-- A handle is single use. `state` moves to `StockfishState.error` if the engine
-  dies, and to the new `StockfishState.disposed` once `dispose()` completes;
-  neither is recoverable on that handle. `stdout` closes on dispose, so it no
-  longer persists across a restart — the replacement engine has its own.
+- An engine that ends — disposed, quit over `stdin`, or crashed — releases its
+  flavour's slot without waiting to be disposed, because the native library is
+  provably free once its `main()` has returned.
+- A handle is single use. `state` ends as the new `StockfishState.disposed` —
+  after `dispose()`, or after the engine exits cleanly on its own, as it does
+  when sent `quit` over `stdin` — or as `StockfishState.error` if it died badly.
+  Neither is recoverable on that handle. `stdout` closes when the engine ends,
+  so it no longer persists across a restart — the replacement engine has its own.
+- Add an `onStdout` parameter to `create()`. `create()` only completes once the
+  engine is ready, so a listener attached to `stdout` afterwards has already
+  missed the banner and the UCI handshake; `onStdout` is attached before the
+  engine is spawned and receives every line for its whole life.
 - `dispose()` gives up on an engine that will not exit within 5 seconds instead
   of waiting for it forever, and frees the slot regardless.
 - `create()` now fails as soon as the engine exits during startup — a start the

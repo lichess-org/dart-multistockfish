@@ -41,11 +41,20 @@ class _AppState extends State<MyApp> {
   Directory? appSupportDirectory;
   StockfishFlavor flavor = StockfishFlavor.sf16;
 
-  /// The engine currently running, if any.
+  /// The most recent engine, kept after it ends so its final state stays on
+  /// screen.
   ///
   /// Engines are per-flavor handles now: this app keeps one at a time, but
   /// nothing stops a second flavor from running alongside it.
   Stockfish? engine;
+
+  /// The console, which outlives the engines that write to it.
+  ///
+  /// An engine's own `stdout` closes when it ends, and does not exist at all
+  /// until `create` completes — by which point the banner and the UCI
+  /// handshake have already been sent. `onStdout` appends here instead, and
+  /// the log keeps every line whatever the widget tree does.
+  final _console = ConsoleLog();
 
   final Completer<NNUEFiles> _nnueFilesCompleter = Completer<NNUEFiles>();
 
@@ -112,6 +121,10 @@ class _AppState extends State<MyApp> {
   void dispose() {
     _diagnosticsTimer?.cancel();
     _diagnostics.dispose();
+    // The engine outlives this widget unless it is released here: it owns two
+    // isolates, a native engine and its flavor's slot.
+    engine?.dispose();
+    _console.dispose();
     super.dispose();
   }
 
@@ -125,6 +138,7 @@ class _AppState extends State<MyApp> {
       variant: variant,
       bigNetPath: _nnueFiles?.bigNetPath,
       smallNetPath: _nnueFiles?.smallNetPath,
+      onStdout: _console.add,
     );
     setState(() => engine = started);
   }
@@ -132,8 +146,17 @@ class _AppState extends State<MyApp> {
   Future<void> _disposeStockfish() async {
     final running = engine;
     if (running == null) return;
-    setState(() => engine = null);
+    // The handle is kept, not cleared: its state is the interesting thing to
+    // show once it has ended.
     await running.dispose();
+    if (mounted) setState(() {});
+  }
+
+  /// Sends a command, ignoring it unless the engine can accept one.
+  void _send(String command) {
+    final running = engine;
+    if (running == null || running.state.value != StockfishState.ready) return;
+    running.stdin = command;
   }
 
   Future<void> _restartStockfish() async {
@@ -291,7 +314,7 @@ class _AppState extends State<MyApp> {
                   padding: const EdgeInsets.all(8.0),
                   child: _onEngineState(
                     (state) => Text(
-                      'stockfish.state=${state ?? 'no engine'}',
+                      'stockfish.state=${state ?? 'no engine yet'}',
                       key: const ValueKey('stockfish.state'),
                     ),
                   ),
@@ -327,14 +350,18 @@ class _AppState extends State<MyApp> {
                       children: [
                         ElevatedButton(
                           onPressed:
-                              state == null || state != StockfishState.ready
-                                  ? _startStockfish
-                                  : null,
+                              state == StockfishState.ready ||
+                                      state == StockfishState.starting
+                                  ? null
+                                  : _startStockfish,
                           child: const Text('Start Stockfish'),
                         ),
                         const SizedBox(width: 8),
                         ElevatedButton(
-                          onPressed: state == null ? null : _disposeStockfish,
+                          onPressed:
+                              state == StockfishState.ready
+                                  ? _disposeStockfish
+                                  : null,
                           child: const Text('Dispose'),
                         ),
                       ],
@@ -349,7 +376,7 @@ class _AppState extends State<MyApp> {
                       labelText: 'Custom UCI command',
                       hintText: 'go infinite',
                     ),
-                    onSubmitted: (value) => engine?.stdin = value,
+                    onSubmitted: _send,
                     textInputAction: TextInputAction.send,
                   ),
                 ),
@@ -366,16 +393,14 @@ class _AppState extends State<MyApp> {
                         (command) => Padding(
                           padding: const EdgeInsets.all(8.0),
                           child: ElevatedButton(
-                            onPressed: () => engine?.stdin = command,
+                            onPressed: () => _send(command),
                             child: Text(command),
                           ),
                         ),
                       )
                       .toList(growable: false),
                 ),
-                Expanded(
-                  child: OutputWidget(engine?.stdout ?? const Stream.empty()),
-                ),
+                Expanded(child: OutputWidget(_console)),
               ],
             );
           },

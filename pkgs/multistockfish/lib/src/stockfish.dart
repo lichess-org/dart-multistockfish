@@ -42,7 +42,8 @@ const kQuitTimeout = Duration(seconds: 5);
 ///
 /// A handle is single-use. Once [dispose] has been called, or the engine has
 /// exited on its own, that handle stays dead; call [create] again for a fresh
-/// one.
+/// one. An engine that exits releases its flavor's slot without waiting to be
+/// disposed, so a replacement can be created straight away.
 class Stockfish {
   Stockfish._(this._flavor, {bool legacy = false}) : _legacy = legacy;
 
@@ -74,6 +75,12 @@ class Stockfish {
   /// but an engine that also refused to quit keeps its native state, and the
   /// next create for that flavor may be refused by the native library until the
   /// process restarts.
+  ///
+  /// Pass [onStdout] to see the engine's startup output. This future does not
+  /// complete until the engine is ready, so a listener attached to [stdout]
+  /// afterwards has already missed the banner and the UCI handshake;
+  /// [onStdout] is attached before the engine is spawned and receives every
+  /// line for its whole life.
   static Future<Stockfish> create({
     /// The flavor of Stockfish to use.
     StockfishFlavor flavor = StockfishFlavor.sf16,
@@ -88,6 +95,9 @@ class Stockfish {
 
     /// Full path to the big net file for NNUE evaluation. Only used for [StockfishFlavor.latestNoNNUE].
     String? bigNetPath,
+
+    /// Receives every line the engine writes, starting from its first.
+    void Function(String line)? onStdout,
   }) async {
     assert(
       flavor != StockfishFlavor.latestNoNNUE ||
@@ -104,6 +114,7 @@ class Stockfish {
           .._smallNetPath = smallNetPath
           .._bigNetPath = bigNetPath;
     engine._claimSlot(flavor);
+    if (onStdout != null) engine._stdoutController.stream.listen(onStdout);
 
     try {
       await engine._doStart();
@@ -152,10 +163,11 @@ class Stockfish {
 
   /// The current state of the underlying C++ engine.
   ///
-  /// A handle returned by [create] is [StockfishState.ready]. It moves to
-  /// [StockfishState.error] if the engine dies on its own, and to
-  /// [StockfishState.disposed] once [dispose] completes; neither is recoverable
-  /// on this handle.
+  /// A handle returned by [create] is [StockfishState.ready]. It ends as
+  /// [StockfishState.disposed] — after [dispose], or after the engine exits
+  /// cleanly on its own, as it does when sent `quit` over [stdin] — or as
+  /// [StockfishState.error] if it died badly. None of those is recoverable on
+  /// this handle: create another one.
   ValueListenable<StockfishState> get state => _state;
 
   /// The standard output stream.
@@ -375,7 +387,15 @@ class Stockfish {
   Future<void> _doDispose() async {
     final engine = _engine;
     if (engine != null) await _quitEngine(engine);
-    _release(StockfishState.disposed, closeStdout: true);
+
+    // A handle that already failed goes on saying so. Disposing it is not what
+    // went wrong, and of the two facts the failure is the one worth keeping.
+    _release(
+      _state.value == StockfishState.error
+          ? StockfishState.error
+          : StockfishState.disposed,
+      closeStdout: true,
+    );
   }
 
   /// Asks [engine] to quit and waits for it to exit.
@@ -437,10 +457,20 @@ class Stockfish {
       return;
     }
 
-    // A handle whose engine is gone is unusable whatever the exit code, so an
-    // exit nobody asked for is an error. When dispose() asked for it, it
-    // publishes the final state itself.
-    if (!_disposing) _state._setValue(StockfishState.error);
+    // When dispose() asked for the exit, it publishes the final state itself.
+    if (_disposing) return;
+
+    // The handle is finished either way, but only a bad exit is a failure: an
+    // engine told `quit` over [stdin] exits cleanly and nothing went wrong.
+    //
+    // The flavor is free whatever the code, because the engine is provably
+    // gone — that is exactly what the native library's re-entry guard keys off.
+    // Holding the slot until dispose() would only make the caller ask
+    // permission to replace an engine that no longer exists.
+    _release(
+      exitCode == 0 ? StockfishState.disposed : StockfishState.error,
+      closeStdout: true,
+    );
   }
 
   // ---------------------------------------------------------------------------

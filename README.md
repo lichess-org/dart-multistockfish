@@ -61,8 +61,9 @@ final opponent = await Stockfish.create(
 await Stockfish.create(flavor: StockfishFlavor.sf16); // throws StateError
 ```
 
-Note that a slot stays taken until `dispose()` is called, *including* after the
-engine has died on its own — the handle is the caller's to release.
+An engine that ends releases its flavor's slot without waiting to be disposed,
+so a replacement can be created straight away. `dispose()` is still what you
+call to stop one that is still running.
 
 ### UCI command
 
@@ -82,6 +83,15 @@ stockfish.stdout.listen((line) {
 });
 ```
 
+`create()` only completes once the engine is ready, so a listener attached to
+`stdout` afterwards has already missed the banner and the UCI handshake. Pass
+`onStdout` to see those too — it is attached before the engine is spawned and
+receives every line for the engine's whole life.
+
+```dart
+final stockfish = await Stockfish.create(onStdout: console.add);
+```
+
 ### Quit / Hot reload
 
 There are two active isolates per running Stockfish engine. That interferes
@@ -98,3 +108,7 @@ await stockfish.dispose();
 // the stdout stream is closed, and the handle stays dead
 print(stockfish.state.value); // StockfishState.disposed
 ```
+
+Sending `quit` over `stdin` works too: the engine exits cleanly and the handle
+ends as `disposed` just the same. Only an engine that died badly ends as
+`StockfishState.error`.
