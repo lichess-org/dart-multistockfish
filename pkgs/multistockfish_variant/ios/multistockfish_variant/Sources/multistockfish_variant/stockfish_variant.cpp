@@ -15,6 +15,7 @@
 #include "Fairy-Stockfish-2b5d9512/src/position.h"
 #include "Fairy-Stockfish-2b5d9512/src/psqt.h"
 #include "Fairy-Stockfish-2b5d9512/src/search.h"
+#include "Fairy-Stockfish-2b5d9512/src/sfio.h"
 #include "Fairy-Stockfish-2b5d9512/src/syzygy/tbprobe.h"
 #include "Fairy-Stockfish-2b5d9512/src/thread.h"
 #include "Fairy-Stockfish-2b5d9512/src/tt.h"
@@ -66,7 +67,8 @@ static std::atomic<long long> g_phase_since_ms{0};
 static std::atomic<bool> g_running{false};
 
 // Whether the pipes have been created. They are created once and reused, so a
-// restart neither leaks descriptors nor invalidates the ones dup2() copied.
+// restart neither leaks descriptors nor invalidates the ones the engine's
+// streams are bound to.
 static std::atomic<bool> g_pipes_ready{false};
 
 static std::mutex g_error_mutex;
@@ -100,13 +102,13 @@ static void set_error(const char *format, ...)
   va_end(args);
 }
 
-// Writes the quit marker straight to the pipe rather than through std::cout, so
-// that it still reaches the reader on paths where the redirection never
-// happened. Flushes std::cout first to preserve ordering on the paths where it
-// did.
+// Writes the quit marker straight to the pipe rather than through the engine's
+// output stream, so that it still reaches the reader on paths where that stream
+// was never bound. Flushes the stream first to preserve ordering on the paths
+// where it was.
 static void signal_quit()
 {
-  std::cout << std::flush;
+  FairyStockfish::sfio::out() << std::flush;
   if (g_pipes_ready.load(std::memory_order_acquire))
   {
     ssize_t ignored = write(CHILD_WRITE_FD, QUITOK, strlen(QUITOK));
@@ -176,7 +178,7 @@ namespace MultiStockfishFairy {
 
   int main(int argc, char* argv[]) {
 
-    std::cout << engine_info() << std::endl;
+    sfio::out() << engine_info() << std::endl;
 
     set_step("piece_map");
     pieceMap.init();
@@ -239,7 +241,7 @@ int stockfish_variant_init()
     // what this used to do on every start: the previous parent-side
     // descriptors were simply overwritten in the array, leaking two per
     // restart. Reusing them also keeps one stable channel for the lifetime of
-    // the process, so the descriptors dup2() copied onto fd 0 and fd 1 always
+    // the process, so the descriptors the engine's streams are bound to always
     // refer to the pipe this library is actually reading and writing.
     drain_pipes();
     set_phase(SF_PHASE_INITIALIZED, "pipes_reused");
@@ -308,20 +310,25 @@ int stockfish_variant_main()
     return SF_MAIN_ALREADY_RUNNING;
   }
 
-  set_phase(SF_PHASE_REDIRECTING, "dup2");
+  set_phase(SF_PHASE_BINDING_STREAMS, "bind_streams");
 
-  if (dup2(CHILD_READ_FD, STDIN_FILENO) < 0 || dup2(CHILD_WRITE_FD, STDOUT_FILENO) < 0)
+  // The engine reads and writes streams this library owns, so this points them
+  // at its own end of the pipe. It replaces a dup2 onto fd 0 and fd 1, which
+  // took over the whole process's standard descriptors: only one flavour could
+  // hold them at a time, and the host application lost its own stdout for as
+  // long as an engine was running.
+  if (!FairyStockfish::sfio::bind(CHILD_READ_FD, CHILD_WRITE_FD))
   {
-    set_error("main: dup2 onto the standard descriptors failed: %s", strerror(errno));
-    set_phase(SF_PHASE_FAILED, "dup2_failed");
+    set_error("main: could not bind the engine's streams to the pipe descriptors");
+    set_phase(SF_PHASE_FAILED, "bind_failed");
     signal_quit();
     g_running.store(false, std::memory_order_release);
-    return SF_MAIN_DUP2_FAILED;
+    return SF_MAIN_BIND_FAILED;
   }
 
-  // The child-side descriptors are deliberately left open: dup2 copied them
-  // onto fd 0 and fd 1, and keeping the originals means a later restart can
-  // redirect again without recreating the pipes.
+  // The child-side descriptors stay open for the lifetime of the process: the
+  // streams bound above write and read them directly, and keeping them means a
+  // later restart can rebind without recreating the pipes.
 
   set_phase(SF_PHASE_ENGINE_BOOTING, "engine_boot");
 

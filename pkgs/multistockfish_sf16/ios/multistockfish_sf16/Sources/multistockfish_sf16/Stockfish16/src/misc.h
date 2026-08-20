@@ -26,6 +26,7 @@
 #include <vector>
 #include <cstdint>
 
+#include "sfio.h"
 #include "types.h"
 
 #define stringify2(x) #x
@@ -67,7 +68,9 @@ private:
 enum SyncCout { IO_LOCK, IO_UNLOCK };
 std::ostream& operator<<(std::ostream&, SyncCout);
 
-#define sync_cout std::cout << IO_LOCK
+// Output goes to this library's own stream rather than the process's stdout, so
+// that two flavours can be resident at once without their output interleaving.
+#define sync_cout ::Stockfish16::sfio::out() << IO_LOCK
 #define sync_endl std::endl << IO_UNLOCK
 
 

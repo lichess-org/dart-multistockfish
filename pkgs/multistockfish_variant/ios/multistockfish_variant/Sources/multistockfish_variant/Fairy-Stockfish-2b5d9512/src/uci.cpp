@@ -260,7 +260,7 @@ namespace {
         // Parse variant config till EOF marker
         stringstream ss;
         std::string line;
-        while (std::getline(cin, line) && line != token)
+        while (std::getline(sfio::in(), line) && line != token)
             ss << line << std::endl;
         if (check)
             variants.parse_istream<true>(ss);
@@ -324,7 +324,7 @@ void UCI::loop(int argc, char* argv[]) {
   }
 
   do {
-      if (argc == 1 && !getline(cin, cmd)) // Block here waiting for input or EOF
+      if (argc == 1 && !getline(sfio::in(), cmd)) // Block here waiting for input or EOF
           cmd = "quit";
 
       istringstream is(cmd);

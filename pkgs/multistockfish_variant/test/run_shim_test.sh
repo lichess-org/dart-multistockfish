@@ -31,6 +31,7 @@ echo "Building..."
   $engine_sources
 
 echo "Running..."
-# The engine dup2s its pipe onto stdout, so the test reports on stderr and the
-# engine's own chatter on stdout is discarded.
+# The test reports on stderr and leaves stdout alone on purpose: one of the
+# things it checks is that the engine no longer takes the process's stdout over,
+# so anything appearing on stdout here would itself be a failure.
 "$out/shim_test" 2>&1 >/dev/null

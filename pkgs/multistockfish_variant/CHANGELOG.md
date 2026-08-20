@@ -1,5 +1,10 @@
 ## 0.3.0
 
+- Give the engine its own input and output streams, bound straight to this
+  library's pipe, instead of redirecting the process's `stdin` and `stdout` onto
+  it. Two flavours can now be resident at the same time without their output
+  landing in one channel, and the host application keeps its own `stdout` while
+  an engine is running.
 - Refuse to run a second engine while one is still alive, instead of racing it
   over the engine's process-global state.
 - Reuse the communication pipes across restarts instead of allocating a new pair
@@ -11,8 +16,9 @@
 - Report failures through `last_error()`, and the engine's lifecycle position
   through `phase()`, `phase_step()` and `phase_elapsed_ms()`, so an engine that
   will not start or will not quit can say where it is stuck.
-- Report an error instead of running when `dup2` fails, when the engine throws,
-  or when the output pipe reaches end of file (which previously spun the reader).
+- Report an error instead of running when the engine's streams cannot be bound
+  to the pipe, when the engine throws, or when the output pipe reaches end of
+  file (which previously spun the reader).
 
 ## 0.2.0
 
