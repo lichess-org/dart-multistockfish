@@ -15,9 +15,10 @@ This plugin provides the following Stockfish engines:
 
 ## Usage
 
-### Start engine
+### Start an engine
 
-`Stockfish` is a singleton. Access it via `Stockfish.instance` and call `start()` to run the engine.
+An engine is a handle you create and dispose. `Stockfish.create()` starts one
+and completes when it is ready for commands.
 
 > [!NOTE]
 > When using the `StockfishFlavor.latestNoNNUE` flavor, you need to download the `.nnue` files before
@@ -26,34 +27,45 @@ This plugin provides the following Stockfish engines:
 ```dart
 import 'package:multistockfish/multistockfish.dart';
 
-final stockfish = Stockfish.instance;
+// defaults to StockfishFlavor.sf16
+final stockfish = await Stockfish.create();
 
 // state is a ValueListenable<StockfishState>
-print(stockfish.state.value); // StockfishState.initial
-
-// start the engine (defaults to StockfishFlavor.sf16)
-await stockfish.start();
 print(stockfish.state.value); // StockfishState.ready
 
-// to change flavor, quit first then start with new configuration
-await stockfish.quit();
-await stockfish.start(
-  flavor: StockfishFlavor.variant,
-  variant: 'atomic',
-);
-
-// for latestNoNNUE flavor, NNUE file paths are required
-await stockfish.quit();
-await stockfish.start(
+// for latestNoNNUE, NNUE file paths are required
+final latest = await Stockfish.create(
   flavor: StockfishFlavor.latestNoNNUE,
   bigNetPath: '/path/to/big.nnue',
   smallNetPath: '/path/to/small.nnue',
 );
 ```
 
-### UCI command
+### One engine per flavor
 
-Wait until the state is ready before sending commands.
+**The handle is the flavor.** At most one engine per `StockfishFlavor` can be
+live at a time: `create()` throws a `StateError` while another engine of the
+same flavor holds the slot, and `dispose()` frees it. Engines of *different*
+flavors are independent and can run side by side, each with its own `stdin`,
+`stdout`, `state` and `diagnostics`.
+
+```dart
+// An NNUE engine for analysis and a Fairy-Stockfish opponent, at the same time.
+final analysis = await Stockfish.create(flavor: StockfishFlavor.sf16);
+final opponent = await Stockfish.create(
+  flavor: StockfishFlavor.variant,
+  variant: 'crazyhouse',
+);
+
+// Refused: sf16 is taken until `analysis` is disposed.
+await Stockfish.create(flavor: StockfishFlavor.sf16); // throws StateError
+```
+
+An engine that ends releases its flavor's slot without waiting to be disposed,
+so a replacement can be created straight away. `dispose()` is still what you
+call to stop one that is still running.
+
+### UCI command
 
 ```dart
 stockfish.stdin = 'isready';
@@ -71,15 +83,32 @@ stockfish.stdout.listen((line) {
 });
 ```
 
-### Quit / Hot reload
-
-There are two active isolates when Stockfish engine is running. That interferes
-with Flutter's hot reload feature so you need to quit the engine before attempting to reload.
+`create()` only completes once the engine is ready, so a listener attached to
+`stdout` afterwards has already missed the banner and the UCI handshake. Pass
+`onStdout` to see those too — it is attached before the engine is spawned and
+receives every line for the engine's whole life.
 
 ```dart
-// sends the UCI quit command
-stockfish.stdin = 'quit';
-
-// or even easier...
-await stockfish.quit();
+final stockfish = await Stockfish.create(onStdout: console.add);
 ```
+
+### Quit / Hot reload
+
+There are two active isolates per running Stockfish engine. That interferes
+with Flutter's hot reload feature so you need to dispose your engines before
+attempting to reload.
+
+`dispose()` sends the UCI `quit` command, waits for the engine to exit and frees
+its flavor's slot. An engine that will not exit is given up on rather than
+waited for forever.
+
+```dart
+await stockfish.dispose();
+
+// the stdout stream is closed, and the handle stays dead
+print(stockfish.state.value); // StockfishState.disposed
+```
+
+Sending `quit` over `stdin` works too: the engine exits cleanly and the handle
+ends as `disposed` just the same. Only an engine that died badly ends as
+`StockfishState.error`.
