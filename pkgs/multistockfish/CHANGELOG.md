@@ -2,6 +2,39 @@
 
 - Add Swift Package Manager support for iOS.
 
+**Engine lifecycle fixes** (in the native packages, via the bumped constraints
+below):
+
+- Restarting after an engine failed to quit no longer corrupts memory. Nothing
+  previously stopped a second engine from running over the first one's
+  process-global state while it was still tearing its thread pool down; that is
+  now refused, and `start` fails with an error saying so.
+- Sending a command can no longer freeze the app. The write to the engine was
+  blocking, so once the engine stopped reading its input and the pipe filled,
+  the calling isolate — usually the platform isolate — blocked forever. It now
+  gives up and reports the failure instead.
+- Starting the engine no longer leaks two file descriptors each time.
+- A restarted engine no longer sees output or commands left over from its
+  predecessor.
+- The stdout reader no longer spins on a closed pipe.
+
+**Diagnosing an engine that will not start or will not quit:**
+
+- Add `Stockfish.diagnostics`, reporting the native engine's lifecycle phase,
+  the step within it, how long it has been there, and the last native error.
+  Attach it to reports of an engine that would not start or would not quit.
+- Report where a start stalled: the `TimeoutException` thrown by `start` now
+  names the phase and step the engine was in when it gave up.
+- Log a failed write to the engine at `SEVERE` with the reason and diagnostics,
+  rather than discarding the result.
+- `quit` no longer waits forever when the engine cannot be reached: if the
+  `quit` command itself cannot be delivered, the engine is declared failed
+  instead of leaving the returned future pending.
+- Log the meaning of a non-zero engine exit code and of an `init` failure.
+
+Requires `multistockfish_chess` ^0.5.0, `multistockfish_sf16` ^0.3.0 and
+`multistockfish_variant` ^0.3.0.
+
 ## 0.5.0
 
 **Breaking changes:**

@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 
 import 'bindings.dart';
+import 'stockfish_diagnostics.dart';
 import 'stockfish_flavor.dart';
 import 'stockfish_state.dart';
 
@@ -80,16 +81,54 @@ class Stockfish {
   /// The standard output stream.
   Stream<String> get stdout => _stdoutController.stream;
 
+  /// A snapshot of what the native engine is doing.
+  ///
+  /// Cheap to read at any time, including while the engine is wedged — the
+  /// values are atomics published by the native shim, not a round trip through
+  /// the engine. Attach it to any report of an engine that would not start or
+  /// would not quit.
+  StockfishDiagnostics get diagnostics {
+    final bindings = _bindings;
+    return StockfishDiagnostics(
+      phase: StockfishPhase.fromCode(bindings.phase()),
+      step: bindings.phaseStep(),
+      elapsed: Duration(milliseconds: bindings.phaseElapsedMs()),
+      lastError: bindings.lastError(),
+    );
+  }
+
   /// The standard input sink.
+  ///
+  /// A failed write is logged at [Level.SEVERE] along with [diagnostics] rather
+  /// than thrown, so that a broken engine does not turn every command site into
+  /// a try/catch. The write never blocks: if the engine has stopped reading its
+  /// input, this reports the failure instead of hanging the calling isolate.
   set stdin(String line) {
     final stateValue = _state.value;
     if (stateValue != StockfishState.ready) {
       throw StateError('Stockfish is not ready ($stateValue)');
     }
 
+    _write(line);
+  }
+
+  /// Sends a line to the engine, returning the native write result.
+  ///
+  /// Negative values are failures described by [describeWriteCode]. They are
+  /// logged here so that every caller reports them the same way, and returned
+  /// so that callers who cannot simply carry on — [quit] in particular — can
+  /// act on them.
+  int _write(String line) {
     _logger.finest('[stdin] $line');
 
-    _bindings.stdinWrite('$line\n');
+    final written = _bindings.stdinWrite('$line\n');
+    if (written < 0) {
+      _logger.severe(
+        'Failed to send "$line" to the engine: ${describeWriteCode(written)}. '
+        '$diagnostics',
+      );
+    }
+    return written;
   }
 
   /// Starts the C++ engine.
@@ -179,12 +218,19 @@ class Stockfish {
       stdin = 'uci';
       await stdout.firstWhere((line) => line == "uciok").timeout(kStartTimeout);
     } on TimeoutException {
+      // Read the diagnostics before asking the engine to quit: doing so moves
+      // it on to another phase and would erase the evidence of where it stalled.
+      final stalledAt = diagnostics;
       _logger.severe(
-        'The engine did not become ready in time (${kStartTimeout.inSeconds}s).',
+        'The engine (${_flavor.name}) did not become ready in time '
+        '(${kStartTimeout.inSeconds}s). $stalledAt',
       );
       await _abandonEngine(engine);
       _state._setValue(StockfishState.error);
-      rethrow;
+      throw TimeoutException(
+        'Stockfish (${_flavor.name}) did not become ready in time. $stalledAt',
+        kStartTimeout,
+      );
     }
 
     if (_flavor == StockfishFlavor.variant && _variant != null) {
@@ -226,7 +272,7 @@ class Stockfish {
     void onStateChange() {
       switch (_state.value) {
         case StockfishState.ready:
-          stdin = 'quit';
+          _requestQuit();
         case StockfishState.initial:
         case StockfishState.error:
           _state.removeListener(onStateChange);
@@ -237,10 +283,25 @@ class Stockfish {
     }
 
     _state.addListener(onStateChange);
-    if (_state.value == StockfishState.ready) {
-      stdin = 'quit';
-    }
+    _requestQuit();
     return completer.future;
+  }
+
+  /// Asks a ready engine to quit.
+  ///
+  /// If the command cannot be delivered the engine is unreachable, so it will
+  /// never report an exit. Waiting for one would hang [quit] forever, so the
+  /// engine is declared failed instead — which is what it is.
+  void _requestQuit() {
+    if (_state.value != StockfishState.ready) return;
+
+    if (_write('quit') < 0) {
+      _logger.severe(
+        'The engine could not be asked to quit and will never report an exit. '
+        'Giving up on a clean shutdown. $diagnostics',
+      );
+      _state._setValue(StockfishState.error);
+    }
   }
 
   /// Asks an engine that failed to start to quit, and waits for it to exit.
@@ -252,12 +313,16 @@ class Stockfish {
   /// An engine that does not exit within [kQuitTimeout] is given up on, but it
   /// is disposed all the same so that whatever it sends afterwards is dropped.
   Future<void> _abandonEngine(_RunningEngine engine) async {
-    _bindings.stdinWrite('quit\n');
+    _write('quit');
     try {
       await engine.exited.future.timeout(kQuitTimeout);
     } on TimeoutException {
       _logger.severe(
-        'The engine did not exit in time (${kQuitTimeout.inSeconds}s) after a failed start.',
+        'The engine did not exit in time (${kQuitTimeout.inSeconds}s) after a '
+        'failed start. $diagnostics '
+        'Until this process is restarted, further start() calls will be refused '
+        'by the native library, because the engine keeps its state in process '
+        'globals that the stuck engine still owns.',
       );
     } finally {
       if (identical(_engine, engine)) _engine = null;
@@ -266,6 +331,15 @@ class Stockfish {
   }
 
   void _onEngineExit(int exitCode) {
+    if (exitCode == 0) {
+      _logger.fine('The engine exited cleanly.');
+    } else {
+      _logger.severe(
+        'The engine exited with code $exitCode: '
+        '${describeMainExitCode(exitCode)}. $diagnostics',
+      );
+    }
+
     _state._setValue(
       exitCode == 0 ? StockfishState.initial : StockfishState.error,
     );
@@ -379,6 +453,8 @@ void _isolateMain(_IsolateArgs args) {
   final exitCode = bindings.main();
   mainPort.send(exitCode);
 
+  // Logging from a spawned isolate does not reach the root logger's listeners,
+  // so the exit code is reported by _onEngineExit on the main isolate instead.
   _logger.fine('nativeMain returns $exitCode');
 }
 
@@ -425,7 +501,14 @@ Future<bool> _spawnIsolates(
 
   final initResult = bindings.init();
   if (initResult != 0) {
-    _logger.severe('initResult=$initResult');
+    _logger.severe(
+      'Failed to initialize the ${flavor.name} engine (init returned '
+      '$initResult): ${describeInitCode(initResult)}. '
+      'phase=${StockfishPhase.fromCode(bindings.phase()).name} '
+      'step=${bindings.phaseStep()} '
+      'for ${bindings.phaseElapsedMs()}ms'
+      '${bindings.lastError() == null ? '' : '; native error: ${bindings.lastError()}'}',
+    );
     return false;
   }
 
