@@ -34,7 +34,7 @@
 #define CHILD_WRITE_FD (pipes[PARENT_READ_PIPE][WRITE_FD])
 
 static const char *QUITOK = "quitok\n";
-static int pipes[NUM_PIPES][2];
+static int pipes[NUM_PIPES][2] = {{-1, -1}, {-1, -1}};
 static char buffer[80];
 
 // ---------------------------------------------------------------------------
@@ -109,6 +109,24 @@ static void signal_quit()
   {
     ssize_t ignored = write(CHILD_WRITE_FD, QUITOK, strlen(QUITOK));
     (void)ignored;
+  }
+}
+
+// Closes a pipe pair and marks it closed.
+//
+// Safe on a pair that was never created: the array starts at -1 and every close
+// resets it, so this can never close a descriptor it does not own -- which
+// matters because 0 is both the array's natural zero value and the process's
+// standard input.
+static void close_pipe_pair(int which)
+{
+  for (int end = 0; end < 2; end++)
+  {
+    if (pipes[which][end] >= 0)
+    {
+      close(pipes[which][end]);
+      pipes[which][end] = -1;
+    }
   }
 }
 
@@ -222,6 +240,7 @@ int stockfish_sf16_init()
   if (pipe(pipes[PARENT_READ_PIPE]) != 0)
   {
     set_error("init: pipe(PARENT_READ_PIPE) failed: %s", strerror(errno));
+    close_pipe_pair(PARENT_READ_PIPE);
     set_phase(SF_PHASE_FAILED, "pipe_failed");
     return SF_INIT_PIPE_FAILED;
   }
@@ -229,8 +248,8 @@ int stockfish_sf16_init()
   if (pipe(pipes[PARENT_WRITE_PIPE]) != 0)
   {
     set_error("init: pipe(PARENT_WRITE_PIPE) failed: %s", strerror(errno));
-    close(PARENT_READ_FD);
-    close(CHILD_WRITE_FD);
+    close_pipe_pair(PARENT_READ_PIPE);
+    close_pipe_pair(PARENT_WRITE_PIPE);
     set_phase(SF_PHASE_FAILED, "pipe_failed");
     return SF_INIT_PIPE_FAILED;
   }
@@ -242,6 +261,10 @@ int stockfish_sf16_init()
   if (flags < 0 || fcntl(PARENT_WRITE_FD, F_SETFL, flags | O_NONBLOCK) < 0)
   {
     set_error("init: could not make the write pipe non-blocking: %s", strerror(errno));
+    // Both pairs are open and g_pipes_ready stays false, so leaving them would
+    // leak four descriptors every time a caller retried init().
+    close_pipe_pair(PARENT_READ_PIPE);
+    close_pipe_pair(PARENT_WRITE_PIPE);
     set_phase(SF_PHASE_FAILED, "fcntl_failed");
     return SF_INIT_FCNTL_FAILED;
   }
