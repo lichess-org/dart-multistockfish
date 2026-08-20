@@ -57,7 +57,12 @@ let package = Package(
                 "Stockfish16/README.md",
                 "Stockfish16/Top CPU Contributors.txt",
                 "Stockfish16/tests",
-                "Stockfish16/.gitignore",
+                // Dot-files (.gitignore and friends) are deliberately NOT listed here: SwiftPM
+                // already skips hidden files when collecting target contents, and `dart pub
+                // publish` strips them from the published archive - so excluding them only makes
+                // Xcode warn "Invalid Exclude ...: File not found" for every consumer that
+                // resolves this package from pub.dev.
+                //
                 // Not a compilable source; embedded via `.incbin` (see note below).
                 "nnue/nn-5af11540bbfe.nnue",
             ],

@@ -53,9 +53,11 @@ let package = Package(
                 "Stockfish/Top CPU Contributors.txt",
                 "Stockfish/scripts",
                 "Stockfish/tests",
-                "Stockfish/.clang-format",
-                "Stockfish/.git-blame-ignore-revs",
-                "Stockfish/.gitignore",
+                // Dot-files (.gitignore, .clang-format, .git-blame-ignore-revs) are deliberately
+                // NOT listed here: SwiftPM already skips hidden files when collecting target
+                // contents, and `dart pub publish` strips them from the published archive - so
+                // excluding them only makes Xcode warn "Invalid Exclude ...: File not found" for
+                // every consumer that resolves this package from pub.dev.
             ],
             cSettings: [
                 .headerSearchPath("include/multistockfish_chess"),

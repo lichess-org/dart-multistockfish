@@ -57,8 +57,12 @@ let package = Package(
                 "Fairy-Stockfish-2b5d9512/test.py",
                 "Fairy-Stockfish-2b5d9512/setup.py",
                 "Fairy-Stockfish-2b5d9512/appveyor.yml",
-                "Fairy-Stockfish-2b5d9512/.gitignore",
                 "Fairy-Stockfish-2b5d9512/tests",
+                // Dot-files (.gitignore and friends) are deliberately NOT listed here: SwiftPM
+                // already skips hidden files when collecting target contents, and `dart pub
+                // publish` strips them from the published archive - so excluding them only makes
+                // Xcode warn "Invalid Exclude ...: File not found" for every consumer that
+                // resolves this package from pub.dev.
             ],
             cSettings: [
                 .headerSearchPath("include/multistockfish_variant"),
