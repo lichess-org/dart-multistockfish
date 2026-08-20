@@ -31,6 +31,10 @@ below):
   `quit` command itself cannot be delivered, the engine is declared failed
   instead of leaving the returned future pending.
 - Log the meaning of a non-zero engine exit code and of an `init` failure.
+- A write that corrupts the command stream, or that breaks the channel to the
+  engine, now moves `state` to `error` as well as logging. Later commands throw
+  instead of piling onto a session the engine can no longer read correctly; a
+  write that simply was not delivered leaves the engine usable.
 
 Requires `multistockfish_chess` ^0.5.0, `multistockfish_sf16` ^0.3.0 and
 `multistockfish_variant` ^0.3.0.

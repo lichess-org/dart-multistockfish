@@ -103,6 +103,11 @@ class Stockfish {
   /// than thrown, so that a broken engine does not turn every command site into
   /// a try/catch. The write never blocks: if the engine has stopped reading its
   /// input, this reports the failure instead of hanging the calling isolate.
+  ///
+  /// A failure that leaves the session unusable — see
+  /// [StockfishWriteResult.isFatal] — additionally moves [state] to
+  /// [StockfishState.error], so subsequent commands throw rather than pile onto
+  /// a channel the engine can no longer read correctly.
   set stdin(String line) {
     final stateValue = _state.value;
     if (stateValue != StockfishState.ready) {
@@ -127,6 +132,19 @@ class Stockfish {
         'Failed to send "$line" to the engine: ${describeWriteCode(written)}. '
         '$diagnostics',
       );
+
+      if (StockfishWriteResult.isFatal(written)) {
+        // The engine can no longer be sent a coherent command stream, so this
+        // session is over whatever the engine itself does next. Failing the
+        // state here makes the rest of the API refuse work until the caller
+        // restarts, instead of letting commands accumulate on a broken channel
+        // and be answered with nonsense.
+        _logger.severe(
+          'The engine session is unrecoverable and has been marked failed. '
+          'Call start() again to obtain a working engine.',
+        );
+        _state._setValue(StockfishState.error);
+      }
     }
     return written;
   }

@@ -140,14 +140,43 @@ String describeMainExitCode(int code) => switch (code) {
   _ => 'unknown exit code ($code)',
 };
 
+/// Result codes returned by the native `stdin_write` function.
+///
+/// Mirrors the `SF_WRITE_*` constants in each native package's header.
+/// Non-negative results are the number of bytes written.
+abstract final class StockfishWriteResult {
+  /// The engine was not initialized.
+  static const notInitialized = -1;
+
+  /// `write()` failed outright, so the channel to the engine is broken.
+  static const failed = -2;
+
+  /// The input pipe stayed full and nothing was written. The engine has stopped
+  /// reading, but the byte stream it will read is still coherent.
+  static const pipeFull = -3;
+
+  /// The input pipe filled part-way through a command. Half a line is now
+  /// queued, and anything sent afterwards concatenates onto that fragment.
+  static const partial = -4;
+
+  /// Whether [code] leaves the session unusable.
+  ///
+  /// [pipeFull] does not: nothing was written, so the command was simply not
+  /// delivered and can be retried. [partial] and [failed] do — one has corrupted
+  /// the command stream, the other has broken the channel carrying it — and
+  /// neither can be recovered from without restarting the engine.
+  static bool isFatal(int code) => code == partial || code == failed;
+}
+
 /// Describes a value returned by the native `stdin_write` function.
 ///
 /// Non-negative values are the number of bytes written.
 String describeWriteCode(int code) => switch (code) {
-  -1 => 'called before a successful init',
-  -2 => 'write() failed',
-  -3 => 'the input pipe is full; the engine has stopped reading',
-  -4 =>
+  StockfishWriteResult.notInitialized => 'called before a successful init',
+  StockfishWriteResult.failed => 'write() failed',
+  StockfishWriteResult.pipeFull =>
+    'the input pipe is full; the engine has stopped reading',
+  StockfishWriteResult.partial =>
     'the input pipe filled mid-command; the command stream is now corrupt and '
         'the engine must be restarted',
   _ when code >= 0 => '$code bytes written',

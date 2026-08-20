@@ -979,6 +979,63 @@ void main() {
         expect(severe, isNotEmpty);
         expect(severe.last.message, contains('go movetime 1000'));
         expect(severe.last.message, contains('stopped reading'));
+
+        // Nothing was written, so the command stream is still coherent and the
+        // engine stays usable.
+        expect(stockfish.state.value, StockfishState.ready);
+      });
+    });
+
+    test('a partial write fails the engine so later commands throw', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final stockfish = Stockfish.instance;
+        final startFuture = stockfish.start();
+        await controller.simulateStartup();
+        await startFuture;
+
+        // Half a command reached the pipe: everything sent afterwards would
+        // concatenate onto that fragment.
+        controller.bindings.stdinWriteReturnValue =
+            StockfishWriteResult.partial;
+
+        stockfish.stdin = 'go movetime 1000';
+
+        expect(stockfish.state.value, StockfishState.error);
+        expect(
+          () => stockfish.stdin = 'stop',
+          throwsStateError,
+          reason: 'the session is over; commands must not keep flowing',
+        );
+      });
+    });
+
+    test('can restart after a partial write kills the session', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final stockfish = Stockfish.instance;
+        final startFuture = stockfish.start();
+        await controller.simulateStartup();
+        await startFuture;
+
+        controller.bindings.stdinWriteReturnValue =
+            StockfishWriteResult.partial;
+        stockfish.stdin = 'go movetime 1000';
+        expect(stockfish.state.value, StockfishState.error);
+
+        // A restart is the documented recovery, and start() accepts the error
+        // state.
+        controller.bindings.stdinWriteReturnValue = 0;
+        controller.exit(0);
+        await Future<void>.delayed(Duration.zero);
+
+        final restartFuture = stockfish.start();
+        await controller.simulateStartup();
+        await restartFuture;
+
+        expect(stockfish.state.value, StockfishState.ready);
       });
     });
 
