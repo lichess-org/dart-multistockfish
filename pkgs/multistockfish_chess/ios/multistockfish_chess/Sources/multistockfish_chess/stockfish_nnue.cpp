@@ -64,7 +64,6 @@ static std::atomic<bool> g_pipes_ready{false};
 
 static std::mutex g_error_mutex;
 static char g_last_error[512] = {0};
-static char g_last_error_snapshot[512] = {0};
 
 static long long steady_now_ms()
 {
@@ -437,11 +436,27 @@ long long stockfish_phase_elapsed_ms()
   return since == 0 ? 0 : steady_now_ms() - since;
 }
 
-const char *stockfish_last_error()
+int stockfish_last_error(char *buffer, int size)
 {
+  if (buffer == NULL || size <= 0)
+    return 0;
+
+  // The copy happens under the lock and into the caller's own buffer. Returning
+  // a pointer to a shared buffer instead would race: the caller reads it after
+  // the lock is gone, so a concurrent reader could overwrite the bytes -- and
+  // the terminator -- while the first one was still scanning them.
   std::lock_guard<std::mutex> lock(g_error_mutex);
-  if (g_last_error[0] == 0)
-    return NULL;
-  memcpy(g_last_error_snapshot, g_last_error, sizeof(g_last_error_snapshot));
-  return g_last_error_snapshot;
+
+  const size_t length = strnlen(g_last_error, sizeof(g_last_error));
+  if (length == 0)
+  {
+    buffer[0] = 0;
+    return 0;
+  }
+
+  const size_t limit = (size_t)size - 1;
+  const size_t copied = length < limit ? length : limit;
+  memcpy(buffer, g_last_error, copied);
+  buffer[copied] = 0;
+  return (int)copied;
 }

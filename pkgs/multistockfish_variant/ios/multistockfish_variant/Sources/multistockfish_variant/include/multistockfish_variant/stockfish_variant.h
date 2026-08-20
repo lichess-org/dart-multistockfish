@@ -91,8 +91,14 @@ extern "C" __attribute__((visibility("default"))) __attribute__((used))
 #endif
 FFI_PLUGIN_EXPORT long long stockfish_variant_phase_elapsed_ms();
 
-/// The most recent error message, or NULL if nothing has failed yet.
+/// Copies the most recent error message into `buffer`, truncating it to fit and
+/// always NUL terminating. Returns the number of bytes written, or 0 if nothing
+/// has failed yet.
+///
+/// The caller supplies the destination on purpose: handing back a pointer to a
+/// shared buffer would let one reader overwrite it while another was still
+/// copying out of it.
 #ifdef __cplusplus
 extern "C" __attribute__((visibility("default"))) __attribute__((used))
 #endif
-FFI_PLUGIN_EXPORT const char * stockfish_variant_last_error();
+FFI_PLUGIN_EXPORT int stockfish_variant_last_error(char *buffer, int size);

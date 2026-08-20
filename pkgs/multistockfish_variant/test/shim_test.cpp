@@ -24,7 +24,7 @@ char *stockfish_variant_stdout_read();
 int stockfish_variant_phase();
 const char *stockfish_variant_phase_step();
 long long stockfish_variant_phase_elapsed_ms();
-const char *stockfish_variant_last_error();
+int stockfish_variant_last_error(char *buffer, int size);
 }
 
 #define SF_PHASE_INITIALIZED 2
@@ -82,6 +82,13 @@ static ssize_t send(const char *command)
   return stockfish_variant_stdin_write(buf);
 }
 
+// Mirrors how Dart calls it: the caller owns the destination buffer.
+static const char *last_error()
+{
+  static char buffer[512];
+  return stockfish_variant_last_error(buffer, sizeof(buffer)) > 0 ? buffer : nullptr;
+}
+
 static int open_fd_count()
 {
   int count = 0;
@@ -135,13 +142,12 @@ int main()
 
     check(stockfish_variant_init() == -2, "init is refused while running");
     check(
-        stockfish_variant_last_error() != nullptr &&
-            strstr(stockfish_variant_last_error(), "still running") != nullptr,
+        last_error() != nullptr && strstr(last_error(), "still running") != nullptr,
         "init explains why it refused");
-    fprintf(stderr, "  ..  %s\n", stockfish_variant_last_error());
+    fprintf(stderr, "  ..  %s\n", last_error());
 
     check(stockfish_variant_main() == -1, "a second main() is refused");
-    fprintf(stderr, "  ..  %s\n", stockfish_variant_last_error());
+    fprintf(stderr, "  ..  %s\n", last_error());
 
     check(send("uci\n") > 0, "uci accepted");
     check(wait_for_output("uciok"), "engine answers uciok");
@@ -187,10 +193,9 @@ int main()
   check(result < 0, "a write to an unread pipe reports failure");
   check(result == -3 || result == -4, "and reports it as a full pipe");
   check(
-      stockfish_variant_last_error() != nullptr &&
-          strstr(stockfish_variant_last_error(), "not reading") != nullptr,
+      last_error() != nullptr && strstr(last_error(), "not reading") != nullptr,
       "with an error naming the cause");
-  fprintf(stderr, "  ..  %s\n", stockfish_variant_last_error());
+  fprintf(stderr, "  ..  %s\n", last_error());
 
   fprintf(stderr, "\n%s (%d failure(s))\n", g_failures == 0 ? "PASS" : "FAIL",
           g_failures);

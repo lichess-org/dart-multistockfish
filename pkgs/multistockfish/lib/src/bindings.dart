@@ -115,11 +115,26 @@ class StockfishBindingsFFI implements StockfishBindings {
   @override
   int phaseElapsedMs() => _phaseElapsedMs?.call() ?? 0;
 
+  /// Matches the `g_last_error` buffer in each native shim. A longer message is
+  /// truncated natively, so this only ever costs one short-lived allocation.
+  static const _lastErrorBufferSize = 512;
+
   @override
   String? lastError() {
-    final pointer = _lastError?.call();
-    if (pointer == null || pointer.address == 0) return null;
-    return pointer.toDartString();
+    final copyLastError = _lastError;
+    if (copyLastError == null) return null;
+
+    // The buffer belongs to this call. The native side fills it while holding
+    // its lock, so no other caller can be writing these bytes while they are
+    // read back — which a shared native buffer could not promise.
+    final buffer = calloc<ffi.Uint8>(_lastErrorBufferSize);
+    try {
+      final length = copyLastError(buffer.cast<Utf8>(), _lastErrorBufferSize);
+      if (length <= 0) return null;
+      return buffer.cast<Utf8>().toDartString(length: length);
+    } finally {
+      calloc.free(buffer);
+    }
   }
 
   /// Looks a symbol up, returning null when it is missing.
@@ -180,7 +195,9 @@ class StockfishBindingsFFI implements StockfishBindings {
       )?.asFunction<int Function()>();
 
   late final _lastError =
-      _tryLookup<ffi.NativeFunction<ffi.Pointer<Utf8> Function()>>(
+      _tryLookup<
+        ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<Utf8>, ffi.Int32)>
+      >(
         '${_prefix}last_error',
-      )?.asFunction<ffi.Pointer<Utf8> Function()>();
+      )?.asFunction<int Function(ffi.Pointer<Utf8>, int)>();
 }
