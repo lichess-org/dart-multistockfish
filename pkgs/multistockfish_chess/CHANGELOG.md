@@ -1,3 +1,12 @@
+## 0.5.1
+
+- Fix `Failed to lookup symbol 'stockfish_init'` on iOS in archived (Release/TestFlight/
+  App Store) builds. Under Swift Package Manager the library is linked
+  statically into the app binary, and Xcode's archive step strips that binary
+  with its default "All Symbols" style, which removed the plugin's exports from
+  the symbol table and the exports trie. The entry points are now weak
+  definitions, which `strip` preserves.
+
 ## 0.5.0
 
 - Refuse to run a second engine while one is still alive, instead of racing it
