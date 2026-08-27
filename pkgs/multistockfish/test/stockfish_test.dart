@@ -110,6 +110,12 @@ class MockEngine {
   void stopReader() {
     _stdoutPort.send(null);
   }
+
+  /// Simulates the reader isolate dying on an error instead of finishing.
+  void failReader(String error) {
+    _stdoutPort.send({'error': error, 'stackTrace': '<no stack>'});
+    _stdoutPort.send(null);
+  }
 }
 
 /// Controller for simulating engine behavior in tests.
@@ -711,6 +717,23 @@ void main() {
         zombie.exit(0);
         await Future.delayed(Duration.zero);
         expect(engine.state.value, StockfishState.disposed);
+      });
+    });
+
+    test('fails the engine when its reader dies', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final engine = await createEngine(controller);
+        expect(engine.state.value, StockfishState.ready);
+
+        // Nothing is draining the engine's output any more. It goes on running until its
+        // pipe fills and then answers nothing, so the session is over whatever it does.
+        controller.engine.failReader('Bad state: the reader blew up');
+        await pumpEventQueue();
+
+        expect(engine.state.value, StockfishState.error);
+        expect(() => engine.stdin = 'isready', throwsStateError);
       });
     });
 
