@@ -28,6 +28,12 @@ const kStartTimeout = Duration(seconds: 5);
 /// abandoned.
 const kQuitTimeout = Duration(seconds: 5);
 
+/// How long an exited engine's reader is given to let go of the pipe.
+///
+/// Short, because the marker it is waiting for is already in the pipe by then:
+/// this is a thread wake-up, not work.
+const kReaderStopTimeout = Duration(seconds: 1);
+
 /// A live Stockfish engine of one [StockfishFlavor].
 ///
 /// Obtain one with [Stockfish.create], which starts the engine and completes
@@ -267,6 +273,10 @@ class Stockfish {
       onExit: (exitCode) {
         if (identical(_engine, engine)) _engine = null;
         _onEngineExit(exitCode);
+        // When dispose() asked for the exit it detaches itself, once it has
+        // waited for the reader to let go of the pipe. Every other way an engine
+        // can end has nobody waiting, so the ports are closed here instead.
+        if (!_disposing) engine.detach();
       },
       onStdout: (line) {
         if (!_stdoutController.isClosed) _stdoutController.add(line);
@@ -283,7 +293,7 @@ class Stockfish {
     if (!success) {
       _logger.severe('Failed to spawn isolates');
       _engine = null;
-      engine.dispose();
+      engine.detach();
       throw Exception('Failed to spawn isolates');
     }
 
@@ -347,8 +357,7 @@ class Stockfish {
         completer.completeError(
           Exception(
             'The ${_flavor.name} engine exited while starting '
-            '${exitCode == null ? '' : '(code $exitCode: '
-                    '${describeMainExitCode(exitCode)}) '}'
+            '(code $exitCode: ${describeMainExitCode(exitCode)}) '
             'and will never become ready. $diagnostics',
           ),
         );
@@ -370,6 +379,10 @@ class Stockfish {
   /// is freed and everything the engine sends afterwards is dropped, but it
   /// keeps the native state it is stuck in, so a later [create] for this flavor
   /// may be refused until the process restarts.
+  ///
+  /// An engine that does exit is also waited on for [kReaderStopTimeout], so
+  /// that its reader has let go of the output pipe before the next engine of
+  /// this flavor can drain it.
   Future<void> dispose() {
     if (_legacy) {
       // Disposing the singleton would close the stdout stream every caller
@@ -426,14 +439,35 @@ class Stockfish {
       }
     }
 
+    // The engine has gone, but its reader has not necessarily noticed: it learns
+    // that from the quit marker in the pipe, and until it has read it the isolate
+    // is still blocked on that pipe. The next create() drains the pipe before it
+    // starts its engine, and a drain that beats the reader to the marker leaves
+    // it blocked forever -- a second reader on the new engine's output, taking
+    // lines at random from the isolate that is supposed to deliver them.
+    //
+    // Only worth waiting for when the engine actually exited: an abandoned one
+    // never writes the marker, and its reader is never going to stop.
+    if (engine.exited.isCompleted) {
+      try {
+        await engine.readerStopped.future.timeout(kReaderStopTimeout);
+      } on TimeoutException {
+        _logger.warning(
+          'The ${_flavor.name} engine exited but its reader did not let go of '
+          'the pipe within ${kReaderStopTimeout.inMilliseconds}ms. A new engine '
+          'of this flavor may lose output to it. $diagnostics',
+        );
+      }
+    }
+
     if (identical(_engine, engine)) _engine = null;
-    engine.dispose();
+    engine.detach();
   }
 
   /// Ends this engine's session: slot returned, ports closed, state published.
   void _release(StockfishState finalState, {required bool closeStdout}) {
     _releaseSlot();
-    _engine?.dispose();
+    _engine?.detach();
     _engine = null;
     _state._setValue(finalState);
     if (closeStdout && !_stdoutController.isClosed) _stdoutController.close();
@@ -647,12 +681,20 @@ class _RunningEngine {
   }) {
     mainPort.listen((message) {
       _logger.fine('The main isolate sent $message');
-      _exitCode = message is int ? message : 1;
-      dispose();
-      onExit(_exitCode!);
+      final code = message is int ? message : 1;
+      // The only thing that completes [exited]; see its doc comment.
+      if (!exited.isCompleted) exited.complete(code);
+      onExit(code);
     });
 
     stdoutPort.listen((message) {
+      // The reader's own end of stream, not engine output.
+      if (message == null) {
+        _logger.fine('The stdout isolate has let go of the pipe');
+        if (!readerStopped.isCompleted) readerStopped.complete();
+        return;
+      }
+
       // A batch of lines from the reader, or a single line from a test's fake.
       final lines = switch (message) {
         final List<Object?> batch => batch,
@@ -680,20 +722,33 @@ class _RunningEngine {
   final mainPort = ReceivePort('Stockfish main isolate port');
   final stdoutPort = ReceivePort('Stockfish stdout isolate port');
 
-  /// Completes when the engine has exited, with its exit code, or with null
-  /// when it was disposed without reporting one.
-  final exited = Completer<int?>();
+  /// Completes with the engine's exit code when it has actually exited.
+  ///
+  /// Completed only by the main isolate reporting that the engine's `main()`
+  /// returned. [detach] deliberately does not touch it: this used to double as
+  /// "the handle stopped listening", so an engine that had merely been let go of
+  /// looked exited -- and [Stockfish._quitEngine], which skips the `quit` write
+  /// for an engine that has already exited, would then silently abandon a live
+  /// engine still holding its flavor's native slot.
+  final exited = Completer<int>();
 
-  int? _exitCode;
-  bool _disposed = false;
+  /// Completes when the reader isolate has finished with the output pipe.
+  ///
+  /// Not the same event as the engine exiting: the reader learns of that from
+  /// the quit marker in the pipe, which it may not have read yet.
+  final readerStopped = Completer<void>();
+
+  bool _detached = false;
 
   /// Stops listening to this engine's isolates.
-  void dispose() {
-    if (_disposed) return;
-    _disposed = true;
+  ///
+  /// Says nothing about the engine, which may still be running: this is the
+  /// handle letting go, not the engine ending.
+  void detach() {
+    if (_detached) return;
+    _detached = true;
     mainPort.close();
     stdoutPort.close();
-    if (!exited.isCompleted) exited.complete(_exitCode);
   }
 }
 
@@ -777,6 +832,11 @@ void _isolateStdout(_IsolateArgs args) {
 
     if (stdout == null) {
       _logger.fine('nativeStdoutRead returns NULL');
+      // Tells the handle the pipe is free. Until this arrives the isolate is
+      // still blocked reading it, and a create() that drained the pipe in the
+      // meantime would leave it blocked forever -- a second reader stealing the
+      // next engine's output.
+      stdoutPort.send(null);
       return;
     }
 

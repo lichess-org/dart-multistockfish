@@ -86,10 +86,29 @@ class MockEngine {
   /// Simulates the engine exiting with the given code.
   ///
   /// Exiting twice is a no-op, as it is for a real process.
+  ///
+  /// The reader stops too: a real engine writes the quit marker on its way out,
+  /// and the isolate reading its pipe returns as soon as it sees it. The handle
+  /// waits for both, so a mock that reported only the exit would leave every
+  /// teardown sitting on the reader timeout.
   void exit(int code) {
     if (_exited) return;
     _exited = true;
     _mainPort.send(code);
+    _stdoutPort.send(null);
+  }
+
+  /// Simulates an engine that exits without its reader ever letting go — one
+  /// wedged somewhere that never writes the quit marker.
+  void exitWithoutStoppingReader(int code) {
+    if (_exited) return;
+    _exited = true;
+    _mainPort.send(code);
+  }
+
+  /// Simulates the reader isolate seeing the quit marker and returning.
+  void stopReader() {
+    _stdoutPort.send(null);
   }
 }
 
@@ -692,6 +711,91 @@ void main() {
         zombie.exit(0);
         await Future.delayed(Duration.zero);
         expect(engine.state.value, StockfishState.disposed);
+      });
+    });
+
+    test(
+      'waits for the reader to let go of the pipe before it returns',
+      () async {
+        final controller = MockEngineController();
+
+        await runWithMockStockfish(controller, () async {
+          final engine = await createEngine(controller);
+
+          var disposed = false;
+          unawaited(engine.dispose().then((_) => disposed = true));
+          await pumpEventQueue();
+
+          // The engine is gone, but its reader is still blocked on the pipe: it
+          // only learns of the exit from the quit marker the engine wrote on its
+          // way out.
+          controller.engine.exitWithoutStoppingReader(0);
+          await pumpEventQueue();
+          expect(
+            disposed,
+            isFalse,
+            reason:
+                'returning here would let the next create() drain the pipe out '
+                'from under a reader that has not stopped',
+          );
+
+          // The reader wakes, sees the marker and returns.
+          controller.engine.stopReader();
+          await pumpEventQueue();
+          expect(disposed, isTrue);
+        });
+      },
+    );
+
+    test('does not wait forever for a reader that never stops', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final engine = await createEngine(controller);
+
+        // Real time rather than fakeAsync: the exit below travels over a
+        // ReceivePort, which only the real event loop delivers.
+        final elapsed = Stopwatch()..start();
+        final disposal = engine.dispose();
+        await pumpEventQueue();
+        controller.engine.exitWithoutStoppingReader(0);
+
+        await disposal.timeout(
+          kReaderStopTimeout * 3,
+          onTimeout:
+              () =>
+                  fail('dispose() hung waiting for a reader that never stops'),
+        );
+        elapsed.stop();
+
+        expect(
+          elapsed.elapsed,
+          greaterThanOrEqualTo(
+            kReaderStopTimeout - const Duration(milliseconds: 100),
+          ),
+          reason: 'it should have given the reader its full window first',
+        );
+        expect(engine.state.value, StockfishState.disposed);
+        expect(Stockfish.debugLiveEngines, isEmpty);
+      });
+    });
+
+    test('does not wait for the reader of an engine that never exited', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final engine = await createEngine(controller);
+
+        fakeAsync((async) {
+          var disposed = false;
+          engine.dispose().then((_) => disposed = true);
+
+          // The engine is wedged: it never exits, so it never writes the marker
+          // and its reader is never going to stop. Waiting for one would add
+          // kReaderStopTimeout to a teardown that has already given up.
+          async.elapse(kQuitTimeout + const Duration(milliseconds: 1));
+          expect(disposed, isTrue);
+        });
       });
     });
 
