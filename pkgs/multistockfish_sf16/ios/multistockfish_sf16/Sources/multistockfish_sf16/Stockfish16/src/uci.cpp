@@ -244,7 +244,7 @@ void UCI::loop(int argc, char* argv[]) {
       cmd += std::string(argv[i]) + " ";
 
   do {
-      if (argc == 1 && !getline(cin, cmd)) // Wait for an input or an end-of-file (EOF) indication
+      if (argc == 1 && !getline(sfio::in(), cmd)) // Wait for an input or an end-of-file (EOF) indication
           cmd = "quit";
 
       istringstream is(cmd);

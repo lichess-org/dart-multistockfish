@@ -75,8 +75,8 @@ struct Tie: public std::streambuf {  // MSVC requires split streambuf for cin an
 class Logger {
 
     Logger() :
-        in(std::cin.rdbuf(), file.rdbuf()),
-        out(std::cout.rdbuf(), file.rdbuf()) {}
+        in(sfio::in().rdbuf(), file.rdbuf()),
+        out(sfio::out().rdbuf(), file.rdbuf()) {}
     ~Logger() { start(""); }
 
     std::ofstream file;
@@ -89,8 +89,8 @@ class Logger {
 
         if (l.file.is_open())
         {
-            std::cout.rdbuf(l.out.buf);
-            std::cin.rdbuf(l.in.buf);
+            sfio::out().rdbuf(l.out.buf);
+            sfio::in().rdbuf(l.in.buf);
             l.file.close();
         }
 
@@ -104,8 +104,8 @@ class Logger {
                 exit(EXIT_FAILURE);
             }
 
-            std::cin.rdbuf(&l.in);
-            std::cout.rdbuf(&l.out);
+            sfio::in().rdbuf(&l.in);
+            sfio::out().rdbuf(&l.out);
         }
     }
 };
@@ -425,8 +425,8 @@ std::ostream& operator<<(std::ostream& os, SyncCout sc) {
     return os;
 }
 
-void sync_cout_start() { std::cout << IO_LOCK; }
-void sync_cout_end() { std::cout << IO_UNLOCK; }
+void sync_cout_start() { sfio::out() << IO_LOCK; }
+void sync_cout_end() { sfio::out() << IO_UNLOCK; }
 
 // Trampoline helper to avoid moving Logger to misc.h
 void start_logger(const std::string& fname) { Logger::start(fname); }

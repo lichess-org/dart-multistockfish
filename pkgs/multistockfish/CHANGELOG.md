@@ -5,6 +5,11 @@
 **Engine lifecycle fixes** (in the native packages, via the bumped constraints
 below):
 
+- The engine no longer takes the process's `stdin` and `stdout` over. Each
+  native library now reads and writes streams of its own, bound directly to its
+  pipe, so anything the app writes to `stdout` still goes where it should while
+  an engine is running — and two flavours can be resident at once, which
+  per-flavour engine handles will build on.
 - Restarting after an engine failed to quit no longer corrupts memory. Nothing
   previously stopped a second engine from running over the first one's
   process-global state while it was still tearing its thread pool down; that is
