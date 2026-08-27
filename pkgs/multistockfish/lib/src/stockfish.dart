@@ -725,11 +725,11 @@ class _RunningEngine {
   /// Completes with the engine's exit code when it has actually exited.
   ///
   /// Completed only by the main isolate reporting that the engine's `main()`
-  /// returned. [detach] deliberately does not touch it: this used to double as
-  /// "the handle stopped listening", so an engine that had merely been let go of
-  /// looked exited -- and [Stockfish._quitEngine], which skips the `quit` write
-  /// for an engine that has already exited, would then silently abandon a live
-  /// engine still holding its flavor's native slot.
+  /// returned, and never by [detach]: a handle that has stopped listening says
+  /// nothing about whether the engine is still running. [Stockfish._quitEngine]
+  /// skips the `quit` write for an engine that has already exited, so anything
+  /// else completing this would abandon a live engine still holding its
+  /// flavor's native slot.
   final exited = Completer<int>();
 
   /// Completes when the reader isolate has finished with the output pipe.

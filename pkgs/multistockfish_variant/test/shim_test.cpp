@@ -217,12 +217,12 @@ int main()
 
   // --- the quit marker arrives glued to the output before it ---------------
   //
-  // The reader used to take 79 bytes at a time and compare the whole buffer
-  // against the marker, so a marker sharing a read with the output before it was
-  // never recognised: the reader looped forever on an engine that had exited,
-  // and went on stealing the pipe from the engine that replaced it. Reading a
-  // page at a time makes a shared read the common case rather than a rare one,
-  // so nothing reads this session until after the engine is gone.
+  // A page-sized read usually picks the marker up in the same call as the output
+  // written before it, so recognising it has to be a suffix match rather than a
+  // whole-buffer one. A reader that misses it loops forever on an engine that
+  // has exited, and then takes the pipe from the engine that replaces it.
+  // Nothing reads this session until after the engine is gone, which is what
+  // puts the output and the marker in one read.
   fprintf(stderr, "\n-- quit marker after buffered output --\n");
   check(stockfish_variant_init() == 0, "init succeeds for the buffered session");
   {

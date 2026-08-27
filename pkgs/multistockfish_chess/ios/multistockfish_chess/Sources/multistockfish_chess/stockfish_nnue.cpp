@@ -47,11 +47,11 @@ static size_t carry_length = 0;
 static bool quit_seen = false;
 
 // None of the three is atomic, because stdout_read() has exactly one caller: the
-// reader the Dart side runs for the engine it started. That was already true of
-// `buffer` alone, but these carry state *between* calls, so a second concurrent
-// reader would now splice one read's tail onto another's and could be handed the
-// end-of-output signal meant for the first. init() resets them for the same
-// reason it drains the pipes: it is the one point where no reader can be running.
+// reader the Dart side runs for the engine it started. They carry state between
+// calls, so a second concurrent reader would splice one read's tail onto
+// another's and could be handed the end-of-output signal meant for the first.
+// init() resets them for the same reason it drains the pipes: it is the one
+// point where no reader can be running.
 
 // ---------------------------------------------------------------------------
 // Diagnostics
