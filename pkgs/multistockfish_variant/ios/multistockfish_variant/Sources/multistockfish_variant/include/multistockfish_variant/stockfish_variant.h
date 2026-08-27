@@ -12,7 +12,19 @@
 #if _WIN32
 #define FFI_PLUGIN_EXPORT __declspec(dllexport)
 #else
-#define FFI_PLUGIN_EXPORT
+// `weak` is what keeps these entry points reachable from Dart on iOS.
+//
+// Under Swift Package Manager this library is linked statically into the app
+// binary rather than shipped as its own framework, so Dart resolves the
+// symbols with dlsym(RTLD_DEFAULT, ...) against the app itself. Xcode's
+// install/archive step runs `strip` over that binary with its default
+// "All Symbols" style, which deletes ordinary global symbols from both the
+// symbol table and the exports trie - after which the lookup fails with
+// "symbol not found", but only in an archived build. Weak definitions are the
+// exception: dyld has to be able to coalesce them across images, so `strip`
+// leaves them in the exports trie. `visibility("default")` and `used` below
+// survive compilation and dead-stripping; `weak` is what survives `strip`.
+#define FFI_PLUGIN_EXPORT __attribute__((weak))
 #endif
 
 // ---------------------------------------------------------------------------
