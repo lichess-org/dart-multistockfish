@@ -653,11 +653,26 @@ class _RunningEngine {
     });
 
     stdoutPort.listen((message) {
-      if (message is String) {
-        _logger.finest('[stdout] $message');
-        onStdout(message);
-      } else {
+      // A batch of lines from the reader, or a single line from a test's fake.
+      final lines = switch (message) {
+        final List<Object?> batch => batch,
+        final String line => [line],
+        _ => const <Object?>[],
+      };
+
+      if (lines.isEmpty) {
         _logger.fine('The stdout isolate sent $message');
+        return;
+      }
+
+      // Checked once rather than per line: this runs for every line the engine
+      // writes, and the interpolation below is not free when nobody is listening.
+      final trace = _logger.isLoggable(Level.FINEST);
+
+      for (final line in lines) {
+        if (line is! String) continue;
+        if (trace) _logger.finest('[stdout] $line');
+        onStdout(line);
       }
     });
   }
@@ -768,9 +783,12 @@ void _isolateStdout(_IsolateArgs args) {
     final data = previous + stdout;
     final lines = data.split('\n');
     previous = lines.removeLast();
-    for (final line in lines) {
-      stdoutPort.send(line);
-    }
+
+    // One message for the whole chunk rather than one per line. A page of
+    // engine output holds dozens of `info` lines during a multi-PV search, and
+    // every port message is an event the main isolate has to turn its loop for
+    // -- which is the isolate also running the UI and the start-up timeouts.
+    if (lines.isNotEmpty) stdoutPort.send(lines);
   }
 }
 
