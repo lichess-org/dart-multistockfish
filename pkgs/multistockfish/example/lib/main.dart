@@ -40,7 +40,21 @@ class MyApp extends StatefulWidget {
 class _AppState extends State<MyApp> {
   Directory? appSupportDirectory;
   StockfishFlavor flavor = StockfishFlavor.sf16;
-  final stockfish = Stockfish.instance;
+
+  /// The most recent engine, kept after it ends so its final state stays on
+  /// screen.
+  ///
+  /// Engines are per-flavor handles now: this app keeps one at a time, but
+  /// nothing stops a second flavor from running alongside it.
+  Stockfish? engine;
+
+  /// The console, which outlives the engines that write to it.
+  ///
+  /// An engine's own `stdout` closes when it ends, and does not exist at all
+  /// until `create` completes — by which point the banner and the UCI
+  /// handshake have already been sent. `onStdout` appends here instead, and
+  /// the log keeps every line whatever the widget tree does.
+  final _console = ConsoleLog();
 
   final Completer<NNUEFiles> _nnueFilesCompleter = Completer<NNUEFiles>();
 
@@ -70,7 +84,10 @@ class _AppState extends State<MyApp> {
   /// signal, because a boot or a shutdown that keeps counting is a wedged
   /// engine. Sitting in the UCI loop or after exit, it is just a number going up.
   void _pollDiagnostics() {
-    final next = stockfish.diagnostics;
+    final engine = this.engine;
+    if (engine == null) return;
+
+    final next = engine.diagnostics;
     final moved = next.phase != _lastPhase || next.step != _lastStep;
 
     if (!moved && !next.phase.isTransient) return;
@@ -104,21 +121,57 @@ class _AppState extends State<MyApp> {
   void dispose() {
     _diagnosticsTimer?.cancel();
     _diagnostics.dispose();
+    // The engine outlives this widget unless it is released here: it owns two
+    // isolates, a native engine and its flavor's slot.
+    engine?.dispose();
+    _console.dispose();
     super.dispose();
   }
 
   Future<void> _startStockfish() async {
-    await stockfish.start(
+    // A flavor's slot stays taken until its engine is disposed, including
+    // after the engine has died, so anything left over goes first.
+    await _disposeStockfish();
+
+    final started = await Stockfish.create(
       flavor: flavor,
       variant: variant,
       bigNetPath: _nnueFiles?.bigNetPath,
       smallNetPath: _nnueFiles?.smallNetPath,
+      onStdout: _console.add,
     );
+    setState(() => engine = started);
+  }
+
+  Future<void> _disposeStockfish() async {
+    final running = engine;
+    if (running == null) return;
+    // The handle is kept, not cleared: its state is the interesting thing to
+    // show once it has ended.
+    await running.dispose();
+    if (mounted) setState(() {});
+  }
+
+  /// Sends a command, ignoring it unless the engine can accept one.
+  void _send(String command) {
+    final running = engine;
+    if (running == null || running.state.value != StockfishState.ready) return;
+    running.stdin = command;
   }
 
   Future<void> _restartStockfish() async {
-    await stockfish.quit();
+    await _disposeStockfish();
     await _startStockfish();
+  }
+
+  /// Rebuilds when the running engine changes state, or when there is none.
+  Widget _onEngineState(Widget Function(StockfishState? state) build) {
+    final running = engine;
+    if (running == null) return build(null);
+    return AnimatedBuilder(
+      animation: running.state,
+      builder: (_, _) => build(running.state.value),
+    );
   }
 
   Future<void> _fetchNNUEFiles() async {
@@ -216,7 +269,7 @@ class _AppState extends State<MyApp> {
                   child: DropdownButton<StockfishFlavor>(
                     onChanged: (value) {
                       setState(() => flavor = value!);
-                      if (stockfish.state.value == StockfishState.ready) {
+                      if (engine?.state.value == StockfishState.ready) {
                         _restartStockfish();
                       }
                     },
@@ -242,7 +295,7 @@ class _AppState extends State<MyApp> {
                     child: DropdownButton<String>(
                       onChanged: (value) {
                         setState(() => variant = value!);
-                        if (stockfish.state.value == StockfishState.ready) {
+                        if (engine?.state.value == StockfishState.ready) {
                           _restartStockfish();
                         }
                       },
@@ -259,13 +312,11 @@ class _AppState extends State<MyApp> {
                   ),
                 Padding(
                   padding: const EdgeInsets.all(8.0),
-                  child: AnimatedBuilder(
-                    animation: stockfish.state,
-                    builder:
-                        (_, __) => Text(
-                          'stockfish.state=${stockfish.state.value}',
-                          key: const ValueKey('stockfish.state'),
-                        ),
+                  child: _onEngineState(
+                    (state) => Text(
+                      'stockfish.state=${state ?? 'no engine yet'}',
+                      key: const ValueKey('stockfish.state'),
+                    ),
                   ),
                 ),
                 Padding(
@@ -294,18 +345,27 @@ class _AppState extends State<MyApp> {
                 ),
                 Padding(
                   padding: const EdgeInsets.all(8.0),
-                  child: AnimatedBuilder(
-                    animation: stockfish.state,
-                    builder:
-                        (_, __) => ElevatedButton(
+                  child: _onEngineState(
+                    (state) => Row(
+                      children: [
+                        ElevatedButton(
                           onPressed:
-                              stockfish.state.value == StockfishState.initial ||
-                                      stockfish.state.value ==
-                                          StockfishState.error
-                                  ? _startStockfish
-                                  : null,
+                              state == StockfishState.ready ||
+                                      state == StockfishState.starting
+                                  ? null
+                                  : _startStockfish,
                           child: const Text('Start Stockfish'),
                         ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed:
+                              state == StockfishState.ready
+                                  ? _disposeStockfish
+                                  : null,
+                          child: const Text('Dispose'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 Padding(
@@ -316,7 +376,7 @@ class _AppState extends State<MyApp> {
                       labelText: 'Custom UCI command',
                       hintText: 'go infinite',
                     ),
-                    onSubmitted: (value) => stockfish.stdin = value,
+                    onSubmitted: _send,
                     textInputAction: TextInputAction.send,
                   ),
                 ),
@@ -333,14 +393,14 @@ class _AppState extends State<MyApp> {
                         (command) => Padding(
                           padding: const EdgeInsets.all(8.0),
                           child: ElevatedButton(
-                            onPressed: () => stockfish.stdin = command,
+                            onPressed: () => _send(command),
                             child: Text(command),
                           ),
                         ),
                       )
                       .toList(growable: false),
                 ),
-                Expanded(child: OutputWidget(stockfish.stdout)),
+                Expanded(child: OutputWidget(_console)),
               ],
             );
           },

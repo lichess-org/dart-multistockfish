@@ -1,3 +1,7 @@
+// The deprecated singleton is still part of this release, and its behaviour is
+// still covered below.
+// ignore_for_file: deprecated_member_use_from_same_package
+
 import 'dart:async';
 import 'dart:isolate';
 
@@ -8,6 +12,9 @@ import 'package:multistockfish/multistockfish.dart';
 import 'package:multistockfish/src/bindings.dart';
 
 /// Mock implementation of [StockfishBindings] for testing.
+///
+/// One per flavor, as in production: each native library has its own pipes,
+/// its own diagnostics and its own idea of whether a write succeeded.
 class MockStockfishBindings implements StockfishBindings {
   final List<String> stdinCalls = [];
   int initReturnValue = 0;
@@ -58,7 +65,10 @@ class MockStockfishBindings implements StockfishBindings {
 /// Each engine keeps its own ports, mirroring production, so that a test can
 /// make an old engine talk after a new one has been spawned.
 class MockEngine {
-  MockEngine(this._mainPort, this._stdoutPort);
+  MockEngine(this.flavor, this._mainPort, this._stdoutPort);
+
+  /// The flavor this engine was spawned for.
+  final StockfishFlavor flavor;
 
   final SendPort _mainPort;
   final SendPort _stdoutPort;
@@ -76,28 +86,74 @@ class MockEngine {
   /// Simulates the engine exiting with the given code.
   ///
   /// Exiting twice is a no-op, as it is for a real process.
+  ///
+  /// The reader stops too: a real engine writes the quit marker on its way out,
+  /// and the isolate reading its pipe returns as soon as it sees it. The handle
+  /// waits for both, so a mock that reported only the exit would leave every
+  /// teardown sitting on the reader timeout.
   void exit(int code) {
     if (_exited) return;
     _exited = true;
     _mainPort.send(code);
+    _stdoutPort.send(null);
+  }
+
+  /// Simulates an engine that exits without its reader ever letting go — one
+  /// wedged somewhere that never writes the quit marker.
+  void exitWithoutStoppingReader(int code) {
+    if (_exited) return;
+    _exited = true;
+    _mainPort.send(code);
+  }
+
+  /// Simulates the reader isolate seeing the quit marker and returning.
+  void stopReader() {
+    _stdoutPort.send(null);
+  }
+
+  /// Simulates the reader isolate dying on an error instead of finishing.
+  void failReader(String error) {
+    _stdoutPort.send({'error': error, 'stackTrace': '<no stack>'});
+    _stdoutPort.send(null);
   }
 }
 
 /// Controller for simulating engine behavior in tests.
 class MockEngineController {
-  final MockStockfishBindings bindings = MockStockfishBindings();
+  final Map<StockfishFlavor, MockStockfishBindings> _bindings = {};
 
   /// Every engine spawned so far, in spawn order.
   final List<MockEngine> engines = [];
 
+  /// The high-water mark of [liveEngines].
+  int maxLiveEngines = 0;
+
+  Duration? _exitOnQuitAfter;
+
+  /// The mocked native library of [flavor].
+  MockStockfishBindings bindingsFor(StockfishFlavor flavor) =>
+      _bindings.putIfAbsent(
+        flavor,
+        () =>
+            MockStockfishBindings()
+              ..onStdin = (input) => _onStdin(flavor, input),
+      );
+
+  /// The mocked native library of the default flavor.
+  MockStockfishBindings get bindings => bindingsFor(StockfishFlavor.sf16);
+
   /// The most recently spawned engine.
   MockEngine get engine => engines.last;
+
+  /// The most recently spawned engine of [flavor], alive or not.
+  MockEngine engineOf(StockfishFlavor flavor) =>
+      engines.lastWhere((e) => e.flavor == flavor);
 
   /// Engines spawned but not yet exited.
   int get liveEngines => engines.where((e) => e.isAlive).length;
 
-  /// The high-water mark of [liveEngines].
-  int maxLiveEngines = 0;
+  MockEngine? _liveEngineOf(StockfishFlavor flavor) =>
+      engines.where((e) => e.flavor == flavor && e.isAlive).lastOrNull;
 
   /// Makes engines exit shortly after they are sent the `quit` command.
   ///
@@ -105,32 +161,47 @@ class MockEngineController {
   /// asynchronous, like a real engine's, so that enabling this exercises the
   /// window during which the engine has been told to quit but is still alive.
   void exitOnQuit({Duration after = Duration.zero}) {
-    bindings.onStdin = (input) {
-      if (input.trim() != 'quit') return;
-      final engine = engines.lastWhere((e) => e.isAlive);
-      Future.delayed(after, () => engine.exit(0));
-    };
+    _exitOnQuitAfter = after;
   }
 
-  /// Simulates the engine starting up by writing its version to stdout
-  /// and responding to the "uci" command with "uciok".
-  Future<void> simulateStartup({String engineName = 'Stockfish 16'}) async {
-    emitStdout(engineName);
+  void _onStdin(StockfishFlavor flavor, String input) {
+    final after = _exitOnQuitAfter;
+    if (after == null || input.trim() != 'quit') return;
+    final engine = _liveEngineOf(flavor);
+    if (engine == null) return;
+    Future.delayed(after, () => engine.exit(0));
+  }
 
-    // Yield so that `Stockfish.instance.start()` writes the "uci" command to stdin
+  /// Simulates the [flavor] engine starting up by writing its version to
+  /// stdout and responding to the "uci" command with "uciok".
+  Future<void> simulateStartup({
+    StockfishFlavor flavor = StockfishFlavor.sf16,
+    String engineName = 'Stockfish 16',
+  }) async {
+    emitStdout(engineName, flavor: flavor);
+
+    // Yield so that the engine being started writes the "uci" command to stdin
     await Future.delayed(Duration.zero);
-    expect(bindings.stdinCalls.lastOrNull, 'uci\n');
-    emitStdout('uciok');
+    expect(bindingsFor(flavor).stdinCalls.lastOrNull, 'uci\n');
+    emitStdout('uciok', flavor: flavor);
   }
 
-  /// Simulates the latest engine outputting a line to stdout.
-  void emitStdout(String line) {
-    engines.lastOrNull?.emitStdout(line);
+  /// Simulates the latest live engine of [flavor] outputting a line.
+  void emitStdout(String line, {StockfishFlavor? flavor}) {
+    final engine = flavor == null ? engines.lastOrNull : _liveEngineOf(flavor);
+    engine?.emitStdout(line);
   }
 
   /// Simulates the latest engine exiting with the given code.
   void exit(int code) {
     engines.lastOrNull?.exit(code);
+  }
+
+  /// Simulates every engine still running exiting with the given code.
+  void exitAll(int code) {
+    for (final engine in engines.where((e) => e.isAlive).toList()) {
+      engine.exit(code);
+    }
   }
 
   /// The spawn isolates override function for zone injection.
@@ -139,11 +210,11 @@ class MockEngineController {
     SendPort stdoutPort,
     StockfishFlavor flavor,
   ) async {
-    if (bindings.initReturnValue != 0) {
+    if (bindingsFor(flavor).initReturnValue != 0) {
       return false;
     }
 
-    engines.add(MockEngine(mainPort, stdoutPort));
+    engines.add(MockEngine(flavor, mainPort, stdoutPort));
     if (liveEngines > maxLiveEngines) maxLiveEngines = liveEngines;
 
     return true;
@@ -163,228 +234,196 @@ Future<T> runWithMockStockfish<T>(
       try {
         return await body();
       } finally {
-        // Clean up by simulating engine exit to reset state
-        controller.exit(0);
+        // Nothing may leak into the next test: the per-flavor slots and the
+        // singleton are process-wide. Exiting the engines first keeps the
+        // cleanup from waiting out a quit timeout.
+        controller.exitAll(0);
         await Future.delayed(Duration.zero);
+        for (final engine in Stockfish.debugLiveEngines.values.toList()) {
+          if (identical(engine, Stockfish.instance)) {
+            await engine.quit();
+          } else {
+            await engine.dispose();
+          }
+        }
       }
     },
     zoneValues: {
-      stockfishBindingsFactoryKey:
-          (StockfishFlavor flavor) => controller.bindings,
+      stockfishBindingsFactoryKey: controller.bindingsFor,
       stockfishSpawnIsolatesKey: controller.spawnIsolates,
     },
   );
 }
 
-void main() {
-  group('Stockfish.instance', () {
-    test('is a singleton', () {
-      expect(Stockfish.instance, same(Stockfish.instance));
-    });
+/// Creates an engine of [flavor] and drives its startup.
+Future<Stockfish> createEngine(
+  MockEngineController controller, {
+  StockfishFlavor flavor = StockfishFlavor.sf16,
+  String? variant,
+  String engineName = 'Stockfish 16',
+}) async {
+  final future = Stockfish.create(flavor: flavor, variant: variant);
+  await controller.simulateStartup(flavor: flavor, engineName: engineName);
+  return future;
+}
 
-    test('starts in initial state', () async {
+void main() {
+  group('Stockfish.create', () {
+    test('returns an engine that is ready for commands', () async {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        expect(Stockfish.instance.state.value, StockfishState.initial);
-        expect(Stockfish.instance.flavor, StockfishFlavor.sf16);
+        final engine = await createEngine(controller);
+
+        expect(engine.state.value, StockfishState.ready);
+        expect(engine.flavor, StockfishFlavor.sf16);
+
+        engine.stdin = 'isready';
+        expect(controller.bindings.stdinCalls, contains('isready\n'));
       });
     });
-  });
 
-  group('Stockfish.start', () {
-    test('transitions to ready state on successful start', () async {
+    test('refuses a second engine of the same flavor', () async {
+      final controller = MockEngineController()..exitOnQuit();
+
+      await runWithMockStockfish(controller, () async {
+        final engine = await createEngine(controller);
+
+        await expectLater(
+          Stockfish.create(flavor: StockfishFlavor.sf16),
+          throwsStateError,
+        );
+
+        // Only the first engine was ever spawned.
+        expect(controller.engines, hasLength(1));
+
+        // The slot is the engine's to give back.
+        await engine.dispose();
+        final replacement = await createEngine(controller);
+        expect(replacement.state.value, StockfishState.ready);
+        expect(controller.engines, hasLength(2));
+      });
+    });
+
+    test('refuses a second engine while the first is still starting', () async {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-        final startFuture = stockfish.start();
+        final first = Stockfish.create(flavor: StockfishFlavor.sf16);
 
-        // Yield to let async code run
-        await Future.delayed(Duration.zero);
-        expect(stockfish.state.value, StockfishState.starting);
+        await expectLater(
+          Stockfish.create(flavor: StockfishFlavor.sf16),
+          throwsStateError,
+          reason:
+              'the slot is claimed before the engine is spawned, so two '
+              'concurrent creates cannot both reach the native library',
+        );
 
         await controller.simulateStartup();
-
-        await startFuture;
-        expect(stockfish.state.value, StockfishState.ready);
+        expect((await first).state.value, StockfishState.ready);
       });
     });
 
-    test('throws StateError when already running', () async {
-      final controller = MockEngineController();
+    test('runs two flavors at once, each with its own I/O and state', () async {
+      final controller = MockEngineController()..exitOnQuit();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-        final startFuture = stockfish.start();
+        final analysis = await createEngine(controller);
+        final opponent = await createEngine(
+          controller,
+          flavor: StockfishFlavor.variant,
+          variant: 'crazyhouse',
+          engineName: 'Fairy-Stockfish',
+        );
 
-        controller.simulateStartup();
+        expect(controller.liveEngines, 2);
+        expect(analysis.state.value, StockfishState.ready);
+        expect(opponent.state.value, StockfishState.ready);
+        expect(opponent.variant, 'crazyhouse');
 
-        await startFuture;
+        final analysisLines = <String>[];
+        final opponentLines = <String>[];
+        analysis.stdout.listen(analysisLines.add);
+        opponent.stdout.listen(opponentLines.add);
 
-        expect(stockfish.state.value, StockfishState.ready);
+        analysis.stdin = 'go depth 20';
+        opponent.stdin = 'go movetime 500';
 
-        // Try to start again - should throw
-        expect(() => stockfish.start(), throwsStateError);
-      });
-    });
-
-    test('returns same Future when start is already in progress', () async {
-      final controller = MockEngineController();
-
-      await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-
-        // Start the engine but don't await yet
-        final startFuture1 = stockfish.start();
-
-        // Yield to let async code run
+        controller.emitStdout(
+          'info depth 20 score cp 31',
+          flavor: StockfishFlavor.sf16,
+        );
+        controller.emitStdout('bestmove e2e4', flavor: StockfishFlavor.variant);
         await Future.delayed(Duration.zero);
-        expect(stockfish.state.value, StockfishState.starting);
 
-        final startFuture2 = stockfish.start();
+        // Neither engine's traffic appears on the other's channel.
+        expect(analysisLines, ['info depth 20 score cp 31']);
+        expect(opponentLines, ['bestmove e2e4']);
+        expect(
+          controller.bindingsFor(StockfishFlavor.sf16).stdinCalls,
+          contains('go depth 20\n'),
+        );
+        expect(
+          controller.bindingsFor(StockfishFlavor.sf16).stdinCalls,
+          isNot(contains('go movetime 500\n')),
+        );
+        expect(
+          controller.bindingsFor(StockfishFlavor.variant).stdinCalls,
+          contains('go movetime 500\n'),
+        );
 
-        expect(startFuture2, same(startFuture1));
+        // Disposing one leaves the other alone.
+        await analysis.dispose();
 
-        controller.simulateStartup();
-
-        // Both should complete successfully
-        await Future.wait([startFuture1, startFuture2]);
-        expect(stockfish.state.value, StockfishState.ready);
+        expect(analysis.state.value, StockfishState.disposed);
+        expect(opponent.state.value, StockfishState.ready);
+        opponent.stdin = 'stop';
+        expect(
+          controller.bindingsFor(StockfishFlavor.variant).stdinCalls,
+          contains('stop\n'),
+        );
       });
     });
 
-    test('concurrent start calls all receive error on failure', () async {
-      final controller = MockEngineController();
-
-      await runWithMockStockfish(controller, () {
-        fakeAsync((async) {
-          Object? error1;
-          Object? error2;
-
-          final stockfish = Stockfish.instance;
-
-          // Start the engine (first caller)
-          final startFuture1 = stockfish.start();
-          startFuture1.catchError((e) {
-            error1 = e;
-            return null;
-          });
-
-          // Flush microtasks to let start() begin
-          async.flushMicrotasks();
-
-          // Call start again while in progress (second caller)
-          final startFuture2 = stockfish.start();
-          startFuture2.catchError((e) {
-            error2 = e;
-            return null;
-          });
-
-          // Both should be the same future
-          expect(startFuture2, same(startFuture1));
-
-          // Don't emit stdout - simulate timeout, then let the engine be
-          // given up on
-          async.elapse(
-            kStartTimeout + kQuitTimeout + const Duration(seconds: 1),
-          );
-
-          // Both callers should receive the same error
-          expect(error1, isA<TimeoutException>());
-          expect(error2, isA<TimeoutException>());
-          expect(stockfish.state.value, StockfishState.error);
-
-          // Clean up
-          controller.exit(0);
-          async.flushMicrotasks();
-        });
-      });
-    });
-
-    test('can restart after quit', () async {
-      final controller = MockEngineController();
-
-      await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-
-        // First start
-        final startFuture1 = stockfish.start();
-        controller.simulateStartup();
-        await startFuture1;
-        expect(stockfish.state.value, StockfishState.ready);
-
-        // Quit
-        final quitFuture = stockfish.quit();
-        controller.exit(0);
-        await quitFuture;
-        expect(stockfish.state.value, StockfishState.initial);
-
-        // Restart
-        final startFuture2 = stockfish.start();
-        controller.simulateStartup();
-        await startFuture2;
-        expect(stockfish.state.value, StockfishState.ready);
-      });
-    });
-
-    test('throws and sets error state when init fails', () async {
+    test('throws and frees the slot when init fails', () async {
       final controller = MockEngineController();
       controller.bindings.initReturnValue = 1;
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
+        await expectLater(Stockfish.create(), throwsException);
+        expect(Stockfish.debugLiveEngines, isEmpty);
 
-        await expectLater(stockfish.start(), throwsException);
-        expect(stockfish.state.value, StockfishState.error);
-      });
-    });
-
-    test('can restart after error', () async {
-      final controller = MockEngineController();
-      controller.bindings.initReturnValue = 1;
-
-      await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-
-        // First start fails
-        await expectLater(stockfish.start(), throwsException);
-        expect(stockfish.state.value, StockfishState.error);
-
-        // Fix the error and restart
+        // The flavor is available again once the cause is fixed.
         controller.bindings.initReturnValue = 0;
-        final startFuture = stockfish.start();
-        controller.simulateStartup();
-        await startFuture;
-        expect(stockfish.state.value, StockfishState.ready);
+        final engine = await createEngine(controller);
+        expect(engine.state.value, StockfishState.ready);
       });
     });
 
-    test('throws TimeoutException when engine does not respond', () async {
+    test('throws TimeoutException when the engine does not respond', () async {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () {
         fakeAsync((async) {
           Object? caughtError;
 
-          Stockfish.instance.start().catchError((e) {
-            caughtError = e;
-            return null;
-          });
+          Stockfish.create().then<void>(
+            (_) {},
+            onError: (Object e) => caughtError = e,
+          );
 
-          // Flush microtasks to let start() begin
           async.flushMicrotasks();
-
-          // Advance time past the start timeout, then past the grace period
-          // the failed engine is given to exit
           async.elapse(
             kStartTimeout + kQuitTimeout + const Duration(seconds: 1),
           );
 
           expect(caughtError, isA<TimeoutException>());
-          expect(Stockfish.instance.state.value, StockfishState.error);
+          expect(
+            Stockfish.debugLiveEngines,
+            isEmpty,
+            reason: 'a failed create must not keep the flavor to itself',
+          );
 
-          // Clean up
           controller.exit(0);
           async.flushMicrotasks();
         });
@@ -398,78 +437,102 @@ void main() {
         fakeAsync((async) {
           Object? caughtError;
 
-          Stockfish.instance.start().catchError((e) {
-            caughtError = e;
-            return null;
-          });
+          Stockfish.create().then<void>(
+            (_) {},
+            onError: (Object e) => caughtError = e,
+          );
 
           async.flushMicrotasks();
           async.elapse(kStartTimeout + const Duration(seconds: 1));
 
-          // The engine has been told to quit, but start() does not report
+          // The engine has been told to quit, but create() does not report
           // failure while the engine may still be winding down: letting the
           // caller retry now would run two engines at once.
           expect(controller.bindings.stdinCalls, contains('quit\n'));
           expect(caughtError, isNull);
-          expect(Stockfish.instance.state.value, StockfishState.starting);
+          expect(Stockfish.debugLiveEngines, isNotEmpty);
 
           async.elapse(kQuitTimeout);
 
           expect(caughtError, isA<TimeoutException>());
-          expect(Stockfish.instance.state.value, StockfishState.error);
+          expect(Stockfish.debugLiveEngines, isEmpty);
         });
       });
     });
 
-    test(
-      'a failed start does not leave an engine behind for the next one',
-      () async {
-        final controller = MockEngineController()..exitOnQuit();
+    test('reports an engine that exits during startup, without waiting out '
+        'the timeout', () async {
+      final controller = MockEngineController();
 
-        await runWithMockStockfish(controller, () {
-          fakeAsync((async) {
-            for (var attempt = 0; attempt < 3; attempt++) {
-              Stockfish.instance.start().catchError((_) => null);
-              async.flushMicrotasks();
-              async.elapse(
-                kStartTimeout + kQuitTimeout + const Duration(seconds: 1),
-              );
-            }
+      await runWithMockStockfish(controller, () async {
+        final future = Stockfish.create();
 
-            expect(controller.engines, hasLength(3));
-            expect(controller.maxLiveEngines, 1);
-            expect(controller.liveEngines, 0);
-          });
+        // The native library refused to run a second engine while the last one
+        // is still wedged, so main() returns immediately.
+        await Future.delayed(Duration.zero);
+        controller.engine.exit(-1);
+
+        await expectLater(
+          future.timeout(
+            const Duration(seconds: 1),
+            onTimeout:
+                () => fail('create() waited for an engine that had exited'),
+          ),
+          throwsA(
+            isA<Exception>().having(
+              (e) => e.toString(),
+              'message',
+              allOf(contains('exited while starting'), contains('-1')),
+            ),
+          ),
+        );
+
+        expect(Stockfish.debugLiveEngines, isEmpty);
+      });
+    });
+
+    test('a failed start does not leave an engine behind for the next '
+        'one', () async {
+      final controller = MockEngineController()..exitOnQuit();
+
+      await runWithMockStockfish(controller, () {
+        fakeAsync((async) {
+          for (var attempt = 0; attempt < 3; attempt++) {
+            Stockfish.create().then<void>((_) {}, onError: (Object _) {});
+            async.flushMicrotasks();
+            async.elapse(
+              kStartTimeout + kQuitTimeout + const Duration(seconds: 1),
+            );
+          }
+
+          expect(controller.engines, hasLength(3));
+          expect(controller.maxLiveEngines, 1);
+          expect(controller.liveEngines, 0);
         });
-      },
-    );
+      });
+    });
 
     test('an engine abandoned after a failed start cannot disturb the next '
         'one', () async {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-
-        // A first start times out, and the engine never honours the quit
+        // A first create times out, and the engine never honours the quit
         // command, so it is eventually given up on.
         fakeAsync((async) {
-          stockfish.start().catchError((_) => null);
+          Stockfish.create().then<void>((_) {}, onError: (Object _) {});
           async.flushMicrotasks();
           async.elapse(
             kStartTimeout + kQuitTimeout + const Duration(seconds: 1),
           );
-          expect(stockfish.state.value, StockfishState.error);
         });
 
         final abandoned = controller.engines.single;
         expect(abandoned.isAlive, isTrue);
 
         // The next engine starts normally.
-        final startFuture = stockfish.start();
-        await controller.simulateStartup();
-        await startFuture;
-        expect(stockfish.state.value, StockfishState.ready);
+        final engine = await createEngine(controller);
+        expect(engine.state.value, StockfishState.ready);
 
         // The abandoned engine finally comes back to life. Nothing it says
         // may reach the engine that replaced it.
@@ -477,31 +540,8 @@ void main() {
         abandoned.exit(0);
         await Future.delayed(Duration.zero);
 
-        expect(stockfish.state.value, StockfishState.ready);
-        stockfish.stdin = 'isready';
-
-        final quitFuture = stockfish.quit();
-        controller.exit(0);
-        await quitFuture;
-        expect(stockfish.state.value, StockfishState.initial);
-      });
-    });
-
-    test('configures flavor correctly', () async {
-      final controller = MockEngineController();
-
-      await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-        final startFuture = stockfish.start(
-          flavor: StockfishFlavor.variant,
-          variant: 'atomic',
-        );
-
-        controller.simulateStartup();
-        await startFuture;
-
-        expect(stockfish.flavor, StockfishFlavor.variant);
-        expect(stockfish.variant, 'atomic');
+        expect(engine.state.value, StockfishState.ready);
+        engine.stdin = 'isready';
       });
     });
 
@@ -509,18 +549,15 @@ void main() {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-        final startFuture = stockfish.start(
+        await createEngine(
+          controller,
           flavor: StockfishFlavor.variant,
           variant: 'atomic',
+          engineName: 'Fairy-Stockfish',
         );
 
-        controller.simulateStartup(engineName: 'Fairy-Stockfish');
-
-        await startFuture;
-
         expect(
-          controller.bindings.stdinCalls,
+          controller.bindingsFor(StockfishFlavor.variant).stdinCalls,
           contains('setoption name UCI_Variant value atomic\n'),
         );
       });
@@ -530,281 +567,530 @@ void main() {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-        final startFuture = stockfish.start(
+        final future = Stockfish.create(
           flavor: StockfishFlavor.latestNoNNUE,
           bigNetPath: '/path/to/big.nnue',
           smallNetPath: '/path/to/small.nnue',
         );
+        await controller.simulateStartup(
+          flavor: StockfishFlavor.latestNoNNUE,
+          engineName: 'Stockfish 18',
+        );
+        final engine = await future;
 
-        controller.simulateStartup(engineName: 'Stockfish 17');
+        expect(engine.bigNetPath, '/path/to/big.nnue');
+        expect(engine.smallNetPath, '/path/to/small.nnue');
 
-        await startFuture;
-
+        final calls =
+            controller.bindingsFor(StockfishFlavor.latestNoNNUE).stdinCalls;
         expect(
-          controller.bindings.stdinCalls,
+          calls,
           contains('setoption name EvalFile value /path/to/big.nnue\n'),
         );
         expect(
-          controller.bindings.stdinCalls,
+          calls,
           contains('setoption name EvalFileSmall value /path/to/small.nnue\n'),
         );
       });
     });
   });
 
-  group('Stockfish.quit', () {
-    test('completes immediately when already in initial state', () async {
+  group('Stockfish.dispose', () {
+    test('quits the engine, waits for it and frees the flavor', () async {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-        expect(stockfish.state.value, StockfishState.initial);
+        final engine = await createEngine(controller);
+        final states = <StockfishState>[];
+        engine.state.addListener(() => states.add(engine.state.value));
 
-        // Should complete immediately
-        await stockfish.quit();
-        expect(stockfish.state.value, StockfishState.initial);
-      });
-    });
-
-    test('sends quit command when ready and returns to initial', () async {
-      final controller = MockEngineController();
-
-      await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-        final startFuture = stockfish.start();
-
-        controller.simulateStartup();
-        await startFuture;
-
-        final quitFuture = stockfish.quit();
-
-        // Simulate engine exiting
-        controller.exit(0);
-
-        await quitFuture;
-
+        final disposeFuture = engine.dispose();
         expect(controller.bindings.stdinCalls, contains('quit\n'));
-        expect(stockfish.state.value, StockfishState.initial);
-      });
-    });
-
-    test('waits for ready state before sending quit when starting', () async {
-      final controller = MockEngineController();
-
-      await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-        stockfish.start(); // Don't await
-
-        await Future.delayed(Duration.zero);
-        expect(stockfish.state.value, StockfishState.starting);
-
-        final quitFuture = stockfish.quit();
-
-        // quit not yet sent
-        expect(controller.bindings.stdinCalls, isNot(contains('quit\n')));
-
-        // Simulate engine becoming ready
-        controller.simulateStartup();
-        await Future.delayed(Duration.zero);
-
-        // Now quit should be sent
-        expect(controller.bindings.stdinCalls, contains('quit\n'));
-
-        // Simulate engine exiting
-        controller.exit(0);
-
-        await quitFuture;
-        expect(stockfish.state.value, StockfishState.initial);
-      });
-    });
-
-    test('returns same Future when quit is already in progress', () async {
-      final controller = MockEngineController();
-
-      await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-        final startFuture = stockfish.start();
-
-        controller.simulateStartup();
-        await startFuture;
-
-        // Call quit multiple times concurrently
-        final quitFuture1 = stockfish.quit();
-        final quitFuture2 = stockfish.quit();
-        final quitFuture3 = stockfish.quit();
-
-        // All should be the same future
-        expect(quitFuture2, same(quitFuture1));
-        expect(quitFuture3, same(quitFuture1));
-
-        // Only one quit command should be sent
         expect(
-          controller.bindings.stdinCalls.where((c) => c == 'quit\n').length,
-          equals(1),
+          Stockfish.debugLiveEngines,
+          isNotEmpty,
+          reason: 'the slot is held until the engine has actually exited',
         );
 
-        // Simulate engine exiting
         controller.exit(0);
+        await disposeFuture;
 
-        // All futures should complete
-        await Future.wait([quitFuture1, quitFuture2, quitFuture3]);
-        expect(stockfish.state.value, StockfishState.initial);
+        expect(engine.state.value, StockfishState.disposed);
+        expect(states, [StockfishState.disposed]);
+        expect(Stockfish.debugLiveEngines, isEmpty);
+      });
+    });
+
+    test('closes the stdout stream and refuses further commands', () async {
+      final controller = MockEngineController()..exitOnQuit();
+
+      await runWithMockStockfish(controller, () async {
+        final engine = await createEngine(controller);
+
+        var done = false;
+        engine.stdout.listen(null, onDone: () => done = true);
+
+        await engine.dispose();
+        await Future.delayed(Duration.zero);
+
+        expect(done, isTrue);
+        expect(() => engine.stdin = 'isready', throwsStateError);
+      });
+    });
+
+    test('concurrent calls share the first one', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final engine = await createEngine(controller);
+
+        final dispose1 = engine.dispose();
+        final dispose2 = engine.dispose();
+        expect(dispose2, same(dispose1));
+
+        expect(
+          controller.bindings.stdinCalls.where((c) => c == 'quit\n').length,
+          1,
+        );
+
+        controller.exit(0);
+        await Future.wait([dispose1, dispose2]);
+
+        // Disposing a disposed engine is a no-op, not a second quit.
+        await engine.dispose();
+        expect(
+          controller.bindings.stdinCalls.where((c) => c == 'quit\n').length,
+          1,
+        );
+      });
+    });
+
+    test('completes on an engine that has already died', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final engine = await createEngine(controller);
+
+        controller.exit(1);
+        await Future.delayed(Duration.zero);
+        expect(engine.state.value, StockfishState.error);
+
+        await engine.dispose().timeout(
+          const Duration(seconds: 2),
+          onTimeout: () => fail('dispose() hung on a dead engine'),
+        );
+
+        expect(
+          engine.state.value,
+          StockfishState.error,
+          reason: 'disposing a failed engine is not what went wrong',
+        );
+        expect(Stockfish.debugLiveEngines, isEmpty);
+      });
+    });
+
+    test('abandons an engine that will not exit, and frees the flavor '
+        'anyway', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final engine = await createEngine(controller);
+
+        fakeAsync((async) {
+          var disposed = false;
+          engine.dispose().then((_) => disposed = true);
+
+          async.flushMicrotasks();
+          expect(disposed, isFalse);
+
+          async.elapse(kQuitTimeout + const Duration(seconds: 1));
+          expect(disposed, isTrue);
+        });
+
+        expect(engine.state.value, StockfishState.disposed);
+        expect(Stockfish.debugLiveEngines, isEmpty);
+
+        // The wedged engine keeps running, but nothing it sends is delivered.
+        final zombie = controller.engines.single;
+        expect(zombie.isAlive, isTrue);
+        zombie.emitStdout('too late');
+        zombie.exit(0);
+        await Future.delayed(Duration.zero);
+        expect(engine.state.value, StockfishState.disposed);
+      });
+    });
+
+    test('fails the engine when its reader dies', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final engine = await createEngine(controller);
+        expect(engine.state.value, StockfishState.ready);
+
+        // Nothing is draining the engine's output any more. It goes on running until its
+        // pipe fills and then answers nothing, so the session is over whatever it does.
+        controller.engine.failReader('Bad state: the reader blew up');
+        await pumpEventQueue();
+
+        expect(engine.state.value, StockfishState.error);
+        expect(() => engine.stdin = 'isready', throwsStateError);
+      });
+    });
+
+    test(
+      'waits for the reader to let go of the pipe before it returns',
+      () async {
+        final controller = MockEngineController();
+
+        await runWithMockStockfish(controller, () async {
+          final engine = await createEngine(controller);
+
+          var disposed = false;
+          unawaited(engine.dispose().then((_) => disposed = true));
+          await pumpEventQueue();
+
+          // The engine is gone, but its reader is still blocked on the pipe: it
+          // only learns of the exit from the quit marker the engine wrote on its
+          // way out.
+          controller.engine.exitWithoutStoppingReader(0);
+          await pumpEventQueue();
+          expect(
+            disposed,
+            isFalse,
+            reason:
+                'returning here would let the next create() drain the pipe out '
+                'from under a reader that has not stopped',
+          );
+
+          // The reader wakes, sees the marker and returns.
+          controller.engine.stopReader();
+          await pumpEventQueue();
+          expect(disposed, isTrue);
+        });
+      },
+    );
+
+    test('does not wait forever for a reader that never stops', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final engine = await createEngine(controller);
+
+        // Real time rather than fakeAsync: the exit below travels over a
+        // ReceivePort, which only the real event loop delivers.
+        final elapsed = Stopwatch()..start();
+        final disposal = engine.dispose();
+        await pumpEventQueue();
+        controller.engine.exitWithoutStoppingReader(0);
+
+        await disposal.timeout(
+          kReaderStopTimeout * 3,
+          onTimeout:
+              () =>
+                  fail('dispose() hung waiting for a reader that never stops'),
+        );
+        elapsed.stop();
+
+        expect(
+          elapsed.elapsed,
+          greaterThanOrEqualTo(
+            kReaderStopTimeout - const Duration(milliseconds: 100),
+          ),
+          reason: 'it should have given the reader its full window first',
+        );
+        expect(engine.state.value, StockfishState.disposed);
+        expect(Stockfish.debugLiveEngines, isEmpty);
+      });
+    });
+
+    test('does not wait for the reader of an engine that never exited', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final engine = await createEngine(controller);
+
+        fakeAsync((async) {
+          var disposed = false;
+          engine.dispose().then((_) => disposed = true);
+
+          // The engine is wedged: it never exits, so it never writes the marker
+          // and its reader is never going to stop. Waiting for one would add
+          // kReaderStopTimeout to a teardown that has already given up.
+          async.elapse(kQuitTimeout + const Duration(milliseconds: 1));
+          expect(disposed, isTrue);
+        });
+      });
+    });
+
+    test('gives up instead of hanging when quit cannot be delivered', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final engine = await createEngine(controller);
+
+        // The engine has stopped reading, so it will never see "quit" and will
+        // never report an exit.
+        controller.bindings.stdinWriteReturnValue = -3;
+
+        await engine.dispose().timeout(
+          const Duration(seconds: 2),
+          onTimeout:
+              () => fail('dispose() hung waiting for an unreachable engine'),
+        );
+
+        expect(engine.state.value, StockfishState.disposed);
+        expect(Stockfish.debugLiveEngines, isEmpty);
       });
     });
   });
 
   group('Stockfish.stdin', () {
-    test('throws StateError when not ready', () async {
+    test('writes to its own flavor bindings', () async {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
+        final engine = await createEngine(controller);
 
-        expect(() => stockfish.stdin = 'uci', throwsStateError);
-      });
-    });
-
-    test('writes to bindings when ready', () async {
-      final controller = MockEngineController();
-
-      await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-        final startFuture = stockfish.start();
-
-        controller.simulateStartup();
-        await startFuture;
-
-        stockfish.stdin = 'uci';
-        stockfish.stdin = 'isready';
+        engine.stdin = 'uci';
+        engine.stdin = 'isready';
 
         expect(controller.bindings.stdinCalls, contains('uci\n'));
         expect(controller.bindings.stdinCalls, contains('isready\n'));
       });
     });
-  });
 
-  group('Stockfish.stdout', () {
-    test('emits lines from engine', () async {
+    test('logs a failed write instead of throwing', () async {
+      final controller = MockEngineController();
+      final records = <LogRecord>[];
+
+      final previousLevel = Logger.root.level;
+      Logger.root.level = Level.ALL;
+      final subscription = Logger.root.onRecord.listen(records.add);
+      addTearDown(() {
+        subscription.cancel();
+        Logger.root.level = previousLevel;
+      });
+
+      await runWithMockStockfish(controller, () async {
+        final engine = await createEngine(controller);
+
+        // The input pipe stayed full: the engine has stopped reading.
+        controller.bindings.stdinWriteReturnValue = -3;
+        controller.bindings.phaseReturnValue = StockfishPhase.uciLoop.code;
+
+        // Must not throw — a broken engine should not turn every command site
+        // into a try/catch.
+        expect(() => engine.stdin = 'go movetime 1000', returnsNormally);
+
+        final severe = records.where((r) => r.level >= Level.SEVERE);
+        expect(severe, isNotEmpty);
+        expect(severe.last.message, contains('go movetime 1000'));
+        expect(severe.last.message, contains('stopped reading'));
+
+        // Nothing was written, so the command stream is still coherent and the
+        // engine stays usable.
+        expect(engine.state.value, StockfishState.ready);
+      });
+    });
+
+    test('a partial write fails the engine so later commands throw', () async {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-        final lines = <String>[];
-        stockfish.stdout.listen(lines.add);
+        final engine = await createEngine(controller);
 
-        final startFuture = stockfish.start();
+        // Half a command reached the pipe: everything sent afterwards would
+        // concatenate onto that fragment.
+        controller.bindings.stdinWriteReturnValue =
+            StockfishWriteResult.partial;
 
-        controller.emitStdout('Stockfish 16');
-        controller.emitStdout('id name Stockfish');
-        controller.emitStdout('uciok');
+        engine.stdin = 'go movetime 1000';
 
-        await startFuture;
-        await Future.delayed(Duration.zero);
-
+        expect(engine.state.value, StockfishState.error);
         expect(
-          lines,
-          containsAll(['Stockfish 16', 'id name Stockfish', 'uciok']),
+          () => engine.stdin = 'stop',
+          throwsStateError,
+          reason: 'the session is over; commands must not keep flowing',
         );
       });
     });
 
-    test('persists across restarts', () async {
+    test('a new engine is the recovery from a partial write', () async {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-        final lines = <String>[];
-        stockfish.stdout.listen(lines.add);
+        final engine = await createEngine(controller);
 
-        // First session
-        final startFuture1 = stockfish.start();
-        controller.simulateStartup(engineName: 'Session 1');
-        await startFuture1;
+        controller.bindings.stdinWriteReturnValue =
+            StockfishWriteResult.partial;
+        engine.stdin = 'go movetime 1000';
+        expect(engine.state.value, StockfishState.error);
 
-        final quitFuture = stockfish.quit();
+        controller.bindings.stdinWriteReturnValue = 0;
+        final disposeFuture = engine.dispose();
         controller.exit(0);
-        await quitFuture;
+        await disposeFuture;
 
-        // Second session - same listener should receive events
-        final startFuture2 = stockfish.start();
-        controller.simulateStartup(engineName: 'Session 2');
-        await startFuture2;
-
-        await Future.delayed(Duration.zero);
-
-        expect(lines, containsAll(['Session 1', 'Session 2']));
+        final replacement = await createEngine(controller);
+        expect(replacement.state.value, StockfishState.ready);
       });
     });
   });
 
-  group('Stockfish.state', () {
-    test('notifies listeners on state changes', () async {
+  group('Stockfish.stdout', () {
+    test('emits lines from its engine', () async {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-        final states = <StockfishState>[];
+        final engine = await createEngine(controller);
+        final lines = <String>[];
+        engine.stdout.listen(lines.add);
 
-        stockfish.state.addListener(() {
-          states.add(stockfish.state.value);
-        });
+        controller.emitStdout('info depth 12');
+        controller.emitStdout('bestmove e2e4');
+        await Future.delayed(Duration.zero);
 
-        final startFuture = stockfish.start();
-        controller.simulateStartup();
-        await startFuture;
-
-        final quitFuture = stockfish.quit();
-        controller.exit(0);
-        await quitFuture;
-
-        expect(states, [
-          StockfishState.starting,
-          StockfishState.ready,
-          StockfishState.initial,
-        ]);
+        expect(lines, ['info depth 12', 'bestmove e2e4']);
       });
     });
 
     test(
-      'transitions to error state on engine crash and can restart',
+      'onStdout sees the startup output stdout has already missed',
       () async {
         final controller = MockEngineController();
 
         await runWithMockStockfish(controller, () async {
-          final stockfish = Stockfish.instance;
-          final states = <StockfishState>[];
+          final fromCreate = <String>[];
+          final future = Stockfish.create(onStdout: fromCreate.add);
+          await controller.simulateStartup();
+          final engine = await future;
 
-          stockfish.state.addListener(() {
-            states.add(stockfish.state.value);
-          });
-
-          // Start the engine
-          final startFuture = stockfish.start();
-          controller.simulateStartup();
-          await startFuture;
-          expect(stockfish.state.value, StockfishState.ready);
-
-          // Simulate engine crash (non-zero exit code)
-          controller.exit(1);
+          // create() only completes once the engine is ready, so a listener
+          // attached to stdout here is already too late for the banner.
+          final fromStdout = <String>[];
+          engine.stdout.listen(fromStdout.add);
           await Future.delayed(Duration.zero);
 
-          expect(stockfish.state.value, StockfishState.error);
-          expect(states, [
-            StockfishState.starting,
-            StockfishState.ready,
-            StockfishState.error,
-          ]);
+          expect(fromCreate, ['Stockfish 16', 'uciok']);
+          expect(fromStdout, isEmpty);
 
-          // Should be able to restart after crash
-          final restartFuture = stockfish.start();
-          controller.simulateStartup();
-          await restartFuture;
-
-          expect(stockfish.state.value, StockfishState.ready);
+          // It keeps receiving for the engine's whole life, though.
+          controller.emitStdout('bestmove e2e4');
+          await Future.delayed(Duration.zero);
+          expect(fromCreate, contains('bestmove e2e4'));
+          expect(fromStdout, ['bestmove e2e4']);
         });
       },
     );
+  });
+
+  group('Stockfish.state', () {
+    test('a crash is an error the handle does not recover from', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final engine = await createEngine(controller);
+        final states = <StockfishState>[];
+        engine.state.addListener(() => states.add(engine.state.value));
+
+        controller.exit(1);
+        await Future.delayed(Duration.zero);
+
+        expect(engine.state.value, StockfishState.error);
+        expect(states, [StockfishState.error]);
+        expect(() => engine.stdin = 'isready', throwsStateError);
+
+        // The engine is gone, so its flavor is free: a replacement does not
+        // have to wait for the dead handle to be disposed.
+        expect(Stockfish.debugLiveEngines, isEmpty);
+        final replacement = await createEngine(controller);
+        expect(replacement.state.value, StockfishState.ready);
+      });
+    });
+
+    test('an engine sent `quit` ends as disposed, not as an error', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final engine = await createEngine(controller);
+        final states = <StockfishState>[];
+        engine.state.addListener(() => states.add(engine.state.value));
+
+        // Quitting over stdin is a supported way to stop an engine, and the
+        // engine exits cleanly: nothing failed.
+        engine.stdin = 'quit';
+        controller.exit(0);
+        await Future.delayed(Duration.zero);
+
+        expect(engine.state.value, StockfishState.disposed);
+        expect(states, [StockfishState.disposed]);
+        expect(Stockfish.debugLiveEngines, isEmpty);
+
+        // Disposing afterwards is a no-op that completes.
+        await engine.dispose().timeout(
+          const Duration(seconds: 2),
+          onTimeout: () => fail('dispose() hung on an engine that had quit'),
+        );
+        expect(engine.state.value, StockfishState.disposed);
+      });
+    });
+  });
+
+  group('Stockfish.diagnostics', () {
+    test('reports what its flavor library publishes', () async {
+      final controller = MockEngineController();
+      controller.bindingsFor(StockfishFlavor.variant)
+        ..phaseReturnValue = StockfishPhase.engineBooting.code
+        ..phaseStepReturnValue = 'nnue'
+        ..phaseElapsedMsReturnValue = 7000
+        ..lastErrorReturnValue = 'init: discarded 3 stale byte(s)';
+
+      await runWithMockStockfish(controller, () async {
+        final engine = await createEngine(
+          controller,
+          flavor: StockfishFlavor.variant,
+          engineName: 'Fairy-Stockfish',
+        );
+
+        final diagnostics = engine.diagnostics;
+        expect(diagnostics.phase, StockfishPhase.engineBooting);
+        expect(diagnostics.step, 'nnue');
+        expect(diagnostics.elapsed, const Duration(seconds: 7));
+        expect(diagnostics.lastError, 'init: discarded 3 stale byte(s)');
+        expect(diagnostics.looksStuck, isTrue);
+      });
+    });
+
+    test('says where a start stalled when it times out', () async {
+      final controller = MockEngineController();
+      controller.bindings
+        ..phaseReturnValue = StockfishPhase.engineBooting.code
+        ..phaseStepReturnValue = 'nnue'
+        ..phaseElapsedMsReturnValue = 6000;
+
+      await runWithMockStockfish(controller, () {
+        fakeAsync((async) {
+          Object? caughtError;
+
+          Stockfish.create().then<void>(
+            (_) {},
+            onError: (Object e) => caughtError = e,
+          );
+
+          async.flushMicrotasks();
+          async.elapse(
+            kStartTimeout + kQuitTimeout + const Duration(seconds: 1),
+          );
+
+          expect(caughtError, isA<TimeoutException>());
+          expect(caughtError.toString(), contains('phase=engineBooting'));
+          expect(caughtError.toString(), contains('step=nnue'));
+
+          controller.exit(0);
+          async.flushMicrotasks();
+        });
+      });
+    });
   });
 
   group('StockfishPhase', () {
@@ -898,50 +1184,106 @@ void main() {
     });
   });
 
-  group('Stockfish.diagnostics', () {
-    test('reports what the native library publishes', () async {
+  group('Stockfish.instance (deprecated)', () {
+    test('is a singleton that starts in the initial state', () async {
       final controller = MockEngineController();
-      controller.bindings
-        ..phaseReturnValue = StockfishPhase.engineBooting.code
-        ..phaseStepReturnValue = 'nnue'
-        ..phaseElapsedMsReturnValue = 7000
-        ..lastErrorReturnValue = 'init: discarded 3 stale byte(s)';
 
-      await runWithMockStockfish(controller, () {
-        final diagnostics = Stockfish.instance.diagnostics;
-
-        expect(diagnostics.phase, StockfishPhase.engineBooting);
-        expect(diagnostics.step, 'nnue');
-        expect(diagnostics.elapsed, const Duration(seconds: 7));
-        expect(diagnostics.lastError, 'init: discarded 3 stale byte(s)');
-        expect(diagnostics.looksStuck, isTrue);
+      await runWithMockStockfish(controller, () async {
+        expect(Stockfish.instance, same(Stockfish.instance));
+        expect(Stockfish.instance.state.value, StockfishState.initial);
+        expect(Stockfish.instance.flavor, StockfishFlavor.sf16);
       });
     });
 
-    test('says where a start stalled when it times out', () async {
+    test('cannot be disposed', () async {
       final controller = MockEngineController();
-      controller.bindings
-        ..phaseReturnValue = StockfishPhase.engineBooting.code
-        ..phaseStepReturnValue = 'nnue'
-        ..phaseElapsedMsReturnValue = 6000;
+
+      await runWithMockStockfish(controller, () async {
+        expect(() => Stockfish.instance.dispose(), throwsStateError);
+      });
+    });
+
+    test('transitions to ready state on successful start', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final stockfish = Stockfish.instance;
+        final startFuture = stockfish.start();
+
+        // Yield to let async code run
+        await Future.delayed(Duration.zero);
+        expect(stockfish.state.value, StockfishState.starting);
+
+        await controller.simulateStartup();
+
+        await startFuture;
+        expect(stockfish.state.value, StockfishState.ready);
+      });
+    });
+
+    test('throws StateError when already running', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final stockfish = Stockfish.instance;
+        final startFuture = stockfish.start();
+
+        controller.simulateStartup();
+        await startFuture;
+
+        expect(stockfish.state.value, StockfishState.ready);
+        expect(() => stockfish.start(), throwsStateError);
+      });
+    });
+
+    test('returns same Future when start is already in progress', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final stockfish = Stockfish.instance;
+
+        final startFuture1 = stockfish.start();
+
+        await Future.delayed(Duration.zero);
+        expect(stockfish.state.value, StockfishState.starting);
+
+        final startFuture2 = stockfish.start();
+        expect(startFuture2, same(startFuture1));
+
+        controller.simulateStartup();
+
+        await Future.wait([startFuture1, startFuture2]);
+        expect(stockfish.state.value, StockfishState.ready);
+      });
+    });
+
+    test('concurrent start calls all receive error on failure', () async {
+      final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () {
         fakeAsync((async) {
-          Object? caughtError;
+          Object? error1;
+          Object? error2;
 
-          Stockfish.instance.start().catchError((e) {
-            caughtError = e;
-            return null;
-          });
+          final stockfish = Stockfish.instance;
+
+          final startFuture1 = stockfish.start();
+          startFuture1.catchError((Object e) => error1 = e);
 
           async.flushMicrotasks();
+
+          final startFuture2 = stockfish.start();
+          startFuture2.catchError((Object e) => error2 = e);
+
+          expect(startFuture2, same(startFuture1));
+
           async.elapse(
             kStartTimeout + kQuitTimeout + const Duration(seconds: 1),
           );
 
-          expect(caughtError, isA<TimeoutException>());
-          expect(caughtError.toString(), contains('phase=engineBooting'));
-          expect(caughtError.toString(), contains('step=nnue'));
+          expect(error1, isA<TimeoutException>());
+          expect(error2, isA<TimeoutException>());
+          expect(stockfish.state.value, StockfishState.error);
 
           controller.exit(0);
           async.flushMicrotasks();
@@ -949,93 +1291,113 @@ void main() {
       });
     });
 
-    test('logs a failed stdin write instead of throwing', () async {
+    test('can restart after quit, keeping its stdout listeners', () async {
       final controller = MockEngineController();
-      final records = <LogRecord>[];
-
-      final previousLevel = Logger.root.level;
-      Logger.root.level = Level.ALL;
-      final subscription = Logger.root.onRecord.listen(records.add);
-      addTearDown(() {
-        subscription.cancel();
-        Logger.root.level = previousLevel;
-      });
 
       await runWithMockStockfish(controller, () async {
         final stockfish = Stockfish.instance;
-        final startFuture = stockfish.start();
-        await controller.simulateStartup();
-        await startFuture;
+        final lines = <String>[];
+        final subscription = stockfish.stdout.listen(lines.add);
+        addTearDown(subscription.cancel);
 
-        // The input pipe stayed full: the engine has stopped reading.
-        controller.bindings.stdinWriteReturnValue = -3;
-        controller.bindings.phaseReturnValue = StockfishPhase.uciLoop.code;
-
-        // Must not throw — a broken engine should not turn every command site
-        // into a try/catch.
-        expect(() => stockfish.stdin = 'go movetime 1000', returnsNormally);
-
-        final severe = records.where((r) => r.level >= Level.SEVERE);
-        expect(severe, isNotEmpty);
-        expect(severe.last.message, contains('go movetime 1000'));
-        expect(severe.last.message, contains('stopped reading'));
-
-        // Nothing was written, so the command stream is still coherent and the
-        // engine stays usable.
+        final startFuture1 = stockfish.start();
+        await controller.simulateStartup(engineName: 'Session 1');
+        await startFuture1;
         expect(stockfish.state.value, StockfishState.ready);
-      });
-    });
 
-    test('a partial write fails the engine so later commands throw', () async {
-      final controller = MockEngineController();
-
-      await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-        final startFuture = stockfish.start();
-        await controller.simulateStartup();
-        await startFuture;
-
-        // Half a command reached the pipe: everything sent afterwards would
-        // concatenate onto that fragment.
-        controller.bindings.stdinWriteReturnValue =
-            StockfishWriteResult.partial;
-
-        stockfish.stdin = 'go movetime 1000';
-
-        expect(stockfish.state.value, StockfishState.error);
-        expect(
-          () => stockfish.stdin = 'stop',
-          throwsStateError,
-          reason: 'the session is over; commands must not keep flowing',
-        );
-      });
-    });
-
-    test('can restart after a partial write kills the session', () async {
-      final controller = MockEngineController();
-
-      await runWithMockStockfish(controller, () async {
-        final stockfish = Stockfish.instance;
-        final startFuture = stockfish.start();
-        await controller.simulateStartup();
-        await startFuture;
-
-        controller.bindings.stdinWriteReturnValue =
-            StockfishWriteResult.partial;
-        stockfish.stdin = 'go movetime 1000';
-        expect(stockfish.state.value, StockfishState.error);
-
-        // A restart is the documented recovery, and start() accepts the error
-        // state.
-        controller.bindings.stdinWriteReturnValue = 0;
+        final quitFuture = stockfish.quit();
+        expect(controller.bindings.stdinCalls, contains('quit\n'));
         controller.exit(0);
-        await Future<void>.delayed(Duration.zero);
+        await quitFuture;
+        expect(stockfish.state.value, StockfishState.initial);
 
-        final restartFuture = stockfish.start();
-        await controller.simulateStartup();
-        await restartFuture;
-
+        final startFuture2 = stockfish.start();
+        await controller.simulateStartup(engineName: 'Session 2');
+        await startFuture2;
         expect(stockfish.state.value, StockfishState.ready);
+
+        await Future.delayed(Duration.zero);
+        expect(lines, containsAll(['Session 1', 'Session 2']));
+      });
+    });
+
+    test('can restart after an error', () async {
+      final controller = MockEngineController();
+      controller.bindings.initReturnValue = 1;
+
+      await runWithMockStockfish(controller, () async {
+        final stockfish = Stockfish.instance;
+
+        await expectLater(stockfish.start(), throwsException);
+        expect(stockfish.state.value, StockfishState.error);
+
+        controller.bindings.initReturnValue = 0;
+        final startFuture = stockfish.start();
+        await controller.simulateStartup();
+        await startFuture;
+        expect(stockfish.state.value, StockfishState.ready);
+      });
+    });
+
+    test('waits for ready state before sending quit when starting', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final stockfish = Stockfish.instance;
+        stockfish.start(); // Don't await
+
+        await Future.delayed(Duration.zero);
+        expect(stockfish.state.value, StockfishState.starting);
+
+        final quitFuture = stockfish.quit();
+
+        // quit not yet sent
+        expect(controller.bindings.stdinCalls, isNot(contains('quit\n')));
+
+        await controller.simulateStartup();
+        await Future.delayed(Duration.zero);
+
+        expect(controller.bindings.stdinCalls, contains('quit\n'));
+
+        controller.exit(0);
+        await quitFuture;
+        expect(stockfish.state.value, StockfishState.initial);
+      });
+    });
+
+    test('returns same Future when quit is already in progress', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final stockfish = Stockfish.instance;
+        final startFuture = stockfish.start();
+        await controller.simulateStartup();
+        await startFuture;
+
+        final quitFuture1 = stockfish.quit();
+        final quitFuture2 = stockfish.quit();
+        expect(quitFuture2, same(quitFuture1));
+
+        expect(
+          controller.bindings.stdinCalls.where((c) => c == 'quit\n').length,
+          1,
+        );
+
+        controller.exit(0);
+        await Future.wait([quitFuture1, quitFuture2]);
+        expect(stockfish.state.value, StockfishState.initial);
+      });
+    });
+
+    test('quit completes immediately when already in initial state', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final stockfish = Stockfish.instance;
+        expect(stockfish.state.value, StockfishState.initial);
+
+        await stockfish.quit();
+        expect(stockfish.state.value, StockfishState.initial);
       });
     });
 
@@ -1064,5 +1426,68 @@ void main() {
         });
       },
     );
+
+    test(
+      'transitions to error state on engine crash and can restart',
+      () async {
+        final controller = MockEngineController();
+
+        await runWithMockStockfish(controller, () async {
+          final stockfish = Stockfish.instance;
+          final states = <StockfishState>[];
+          stockfish.state.addListener(() => states.add(stockfish.state.value));
+
+          final startFuture = stockfish.start();
+          await controller.simulateStartup();
+          await startFuture;
+          expect(stockfish.state.value, StockfishState.ready);
+
+          controller.exit(1);
+          await Future.delayed(Duration.zero);
+
+          expect(stockfish.state.value, StockfishState.error);
+          expect(states, [
+            StockfishState.starting,
+            StockfishState.ready,
+            StockfishState.error,
+          ]);
+
+          final restartFuture = stockfish.start();
+          await controller.simulateStartup();
+          await restartFuture;
+
+          expect(stockfish.state.value, StockfishState.ready);
+        });
+      },
+    );
+
+    test('competes for the same flavor slot as create()', () async {
+      final controller = MockEngineController()..exitOnQuit();
+
+      await runWithMockStockfish(controller, () async {
+        final engine = await createEngine(controller);
+
+        // The singleton cannot take a flavor a handle already holds...
+        expect(() => Stockfish.instance.start(), throwsStateError);
+
+        await engine.dispose();
+
+        final startFuture = Stockfish.instance.start();
+        await controller.simulateStartup();
+        await startFuture;
+
+        // ...and a handle cannot take one the singleton holds.
+        await expectLater(Stockfish.create(), throwsStateError);
+
+        // A different flavor is unaffected.
+        final variant = await createEngine(
+          controller,
+          flavor: StockfishFlavor.variant,
+          engineName: 'Fairy-Stockfish',
+        );
+        expect(variant.state.value, StockfishState.ready);
+        await variant.dispose();
+      });
+    });
   });
 }

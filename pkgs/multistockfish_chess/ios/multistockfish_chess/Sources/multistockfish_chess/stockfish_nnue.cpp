@@ -33,7 +33,25 @@
 
 static const char *QUITOK = "quitok\n";
 static int pipes[NUM_PIPES][2] = {{-1, -1}, {-1, -1}};
-static char buffer[80];
+// A page at a time, matching the buffer the engine's output stream flushes from.
+static char buffer[4096];
+
+// An unfinished tail held back from the previous read, because it might turn out
+// to be the start of the quit marker.
+static char carry[8];
+static size_t carry_length = 0;
+
+// Whether the quit marker has been seen. The output that preceded it in the same
+// read is handed over first, so the reader gets the engine's last words before it
+// is told to stop.
+static bool quit_seen = false;
+
+// None of the three is atomic, because stdout_read() has exactly one caller: the
+// reader the Dart side runs for the engine it started. They carry state between
+// calls, so a second concurrent reader would splice one read's tail onto
+// another's and could be handed the end-of-output signal meant for the first.
+// init() resets them for the same reason it drains the pipes: it is the one
+// point where no reader can be running.
 
 // ---------------------------------------------------------------------------
 // Diagnostics
@@ -210,6 +228,12 @@ int stockfish_init()
         steady_now_ms() - g_phase_since_ms.load(std::memory_order_relaxed));
     return SF_INIT_ALREADY_RUNNING;
   }
+
+  // A reader that was killed rather than allowed to finish leaves its carry and
+  // its end-of-output flag behind. Left set, the flag would tell the *next*
+  // engine's reader to stop before it had read a byte.
+  carry_length = 0;
+  quit_seen = false;
 
   if (g_pipes_ready.load(std::memory_order_acquire))
   {
@@ -395,6 +419,27 @@ ssize_t stockfish_stdin_write(char *data)
   return (ssize_t)written;
 }
 
+// The length of the longest suffix of [data] that is a proper prefix of QUITOK.
+//
+// The marker is the last thing an engine writes, but a read can return it glued
+// to the output before it, and -- if the pipe happened to be full -- split across
+// two reads. Holding such a tail back is safe: every line the engine writes ends
+// in '\n', which no prefix of the marker does, so an unfinished tail always has
+// more data coming after it.
+static size_t partial_quit_length(const char *data, size_t length)
+{
+  const size_t marker = strlen(QUITOK);
+  size_t candidate = (marker - 1 < length) ? marker - 1 : length;
+
+  for (; candidate > 0; candidate--)
+  {
+    if (memcmp(data + length - candidate, QUITOK, candidate) == 0)
+      return candidate;
+  }
+
+  return 0;
+}
+
 char *stockfish_stdout_read()
 {
   if (!g_pipes_ready.load(std::memory_order_acquire))
@@ -403,28 +448,72 @@ char *stockfish_stdout_read()
     return NULL;
   }
 
-  ssize_t count = read(PARENT_READ_FD, buffer, sizeof(buffer) - 1);
-
-  if (count < 0)
+  // The marker was found last time and everything before it has been delivered.
+  // The engine is gone; tell the reader to stop.
+  if (quit_seen)
   {
-    set_error("stdout_read: read failed: %s", strerror(errno));
+    quit_seen = false;
+    carry_length = 0;
     return NULL;
   }
 
-  // End of file. Returning the empty buffer here would spin the reader.
-  if (count == 0)
-  {
-    set_error("stdout_read: the output pipe reached end of file");
-    return NULL;
-  }
+  const size_t marker = strlen(QUITOK);
 
-  buffer[count] = 0;
-  if (strcmp(buffer, QUITOK) == 0)
+  for (;;)
   {
-    return NULL;
-  }
+    memcpy(buffer, carry, carry_length);
 
-  return buffer;
+    const ssize_t count = read(PARENT_READ_FD, buffer + carry_length, sizeof(buffer) - 1 - carry_length);
+
+    if (count < 0)
+    {
+      set_error("stdout_read: read failed: %s", strerror(errno));
+      carry_length = 0;
+      return NULL;
+    }
+
+    // End of file. Returning the empty buffer here would spin the reader.
+    if (count == 0)
+    {
+      set_error("stdout_read: the output pipe reached end of file");
+      carry_length = 0;
+      return NULL;
+    }
+
+    size_t total = carry_length + (size_t)count;
+    carry_length = 0;
+    buffer[total] = 0;
+
+    // The marker is written on its own once the engine's output has been
+    // flushed, so it is always last -- but this read may have picked up output
+    // written before it.
+    if (total >= marker && memcmp(buffer + total - marker, QUITOK, marker) == 0)
+    {
+      total -= marker;
+      buffer[total] = 0;
+      if (total == 0)
+        return NULL;
+
+      quit_seen = true;
+      return buffer;
+    }
+
+    const size_t partial = partial_quit_length(buffer, total);
+    if (partial > 0)
+    {
+      memcpy(carry, buffer + total - partial, partial);
+      carry_length = partial;
+      total -= partial;
+      buffer[total] = 0;
+    }
+
+    // The whole read was an unfinished tail. Wait for the rest of it rather than
+    // handing the reader an empty string.
+    if (total == 0)
+      continue;
+
+    return buffer;
+  }
 }
 
 int stockfish_phase()

@@ -215,6 +215,51 @@ int main()
   check(same_fd(fd_identity(STDOUT_FILENO), stdout_at_start),
         "the process keeps its own stdout");
 
+  // --- the quit marker arrives glued to the output before it ---------------
+  //
+  // A page-sized read usually picks the marker up in the same call as the output
+  // written before it, so recognising it has to be a suffix match rather than a
+  // whole-buffer one. A reader that misses it loops forever on an engine that
+  // has exited, and then takes the pipe from the engine that replaces it.
+  // Nothing reads this session until after the engine is gone, which is what
+  // puts the output and the marker in one read.
+  fprintf(stderr, "\n-- quit marker after buffered output --\n");
+  check(stockfish_variant_init() == 0, "init succeeds for the buffered session");
+  {
+    int code = -99;
+    std::thread engine([&code] { code = stockfish_variant_main(); });
+
+    // No reader thread, so the phase is the only way to tell the engine is up.
+    for (int waited = 0;
+         waited < 15000 && stockfish_variant_phase() != SF_PHASE_UCI_LOOP;
+         waited += 10)
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    check(stockfish_variant_phase() == SF_PHASE_UCI_LOOP, "the engine reached its loop");
+
+    // The banner, the handshake and the marker all pile up in the pipe together.
+    check(send("uci\n") > 0, "uci accepted");
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    check(send("quit\n") > 0, "quit accepted");
+    engine.join();
+    check(code == 0, "engine exits with 0");
+
+    std::string collected;
+    while (true)
+    {
+      char *chunk = stockfish_variant_stdout_read();
+      if (chunk == nullptr)
+        break;
+      collected += chunk;
+    }
+
+    check(collected.find("Fairy-Stockfish") != std::string::npos,
+          "the banner buffered before the marker is still delivered");
+    check(collected.find("uciok") != std::string::npos,
+          "so is the handshake that shared the marker's read");
+    check(collected.find("quitok") == std::string::npos,
+          "and the marker itself is not delivered as output");
+  }
+
   // --- the input pipe fills instead of blocking forever --------------------
   fprintf(stderr, "\n-- non-blocking write --\n");
   std::string filler(1024, 'x');

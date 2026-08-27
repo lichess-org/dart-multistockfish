@@ -24,20 +24,45 @@ const stockfishSpawnIsolatesKey = #_stockfishSpawnIsolates;
 /// Timeout duration to consider engine start failed.
 const kStartTimeout = Duration(seconds: 5);
 
-/// How long an engine that failed to start is given to exit after being asked
-/// to quit, before it is abandoned.
+/// How long an engine is given to exit after being asked to quit, before it is
+/// abandoned.
 const kQuitTimeout = Duration(seconds: 5);
 
-/// A Dart wrapper around the Stockfish chess engine.
+/// How long an exited engine's reader is given to let go of the pipe.
 ///
-/// The engine is started in a separate isolate.
+/// Short, because the marker it is waiting for is already in the pipe by then:
+/// this is a thread wake-up, not work.
+const kReaderStopTimeout = Duration(seconds: 1);
+
+/// A live Stockfish engine of one [StockfishFlavor].
 ///
-/// Different flavors of Stockfish can be used by specifying the [flavor] in [start].
+/// Obtain one with [Stockfish.create], which starts the engine and completes
+/// once it is ready for commands, and release it with [dispose].
 ///
-/// This is a singleton - use [Stockfish.instance] to access it.
+/// **The handle is the flavor.** At most one engine per [StockfishFlavor] can
+/// be live at a time: [create] throws a [StateError] while another engine of
+/// the same flavor holds the slot, and [dispose] frees it. Engines of
+/// *different* flavors are independent and may be live together — an analysis
+/// engine and a variant opponent, say — each with its own [stdin], [stdout],
+/// [state] and [diagnostics].
+///
+/// A handle is single-use. Once [dispose] has been called, or the engine has
+/// exited on its own, that handle stays dead; call [create] again for a fresh
+/// one. An engine that exits releases its flavor's slot without waiting to be
+/// disposed, so a replacement can be created straight away.
 class Stockfish {
-  /// The singleton instance of Stockfish.
-  static final Stockfish instance = Stockfish._();
+  Stockfish._(this._flavor, {bool legacy = false}) : _legacy = legacy;
+
+  /// The engines currently holding their flavor's slot.
+  static final Map<StockfishFlavor, Stockfish> _live = {};
+
+  /// The engines currently live, by flavor.
+  ///
+  /// The slots are process-wide, so a test that leaves one claimed leaks it
+  /// into the next test.
+  @visibleForTesting
+  static Map<StockfishFlavor, Stockfish> get debugLiveEngines =>
+      Map.unmodifiable(_live);
 
   /// The default big NNUE file for evaluation of [StockfishFlavor.latestNoNNUE].
   static const latestBigNNUE = 'nn-c288c895ea92.nnue';
@@ -45,12 +70,76 @@ class Stockfish {
   /// The default small NNUE file for evaluation of [StockfishFlavor.latestNoNNUE].
   static const latestSmallNNUE = 'nn-37f18f62d772.nnue';
 
-  StockfishFlavor _flavor = StockfishFlavor.sf16;
+  /// Starts an engine of [flavor] and completes when it is ready for commands.
+  ///
+  /// When [flavor] is [StockfishFlavor.latestNoNNUE], [smallNetPath] and
+  /// [bigNetPath] must be provided.
+  ///
+  /// Throws a [StateError] if an engine of [flavor] is already live — call
+  /// [dispose] on it first — and a [TimeoutException] if the engine does not
+  /// become ready within [kStartTimeout]. A failed create frees the slot again,
+  /// but an engine that also refused to quit keeps its native state, and the
+  /// next create for that flavor may be refused by the native library until the
+  /// process restarts.
+  ///
+  /// Pass [onStdout] to see the engine's startup output. This future does not
+  /// complete until the engine is ready, so a listener attached to [stdout]
+  /// afterwards has already missed the banner and the UCI handshake;
+  /// [onStdout] is attached before the engine is spawned and receives every
+  /// line for its whole life.
+  static Future<Stockfish> create({
+    /// The flavor of Stockfish to use.
+    StockfishFlavor flavor = StockfishFlavor.sf16,
+
+    /// The variant of chess to use. (Only for [StockfishFlavor.variant]).
+    ///
+    /// Example: '3check', 'crazyhouse', 'atomic', 'kingofthehill', 'antichess', 'horde', 'racingkings'.
+    String? variant,
+
+    /// Full path to the small net file for NNUE evaluation. Only used for [StockfishFlavor.latestNoNNUE].
+    String? smallNetPath,
+
+    /// Full path to the big net file for NNUE evaluation. Only used for [StockfishFlavor.latestNoNNUE].
+    String? bigNetPath,
+
+    /// Receives every line the engine writes, starting from its first.
+    void Function(String line)? onStdout,
+  }) async {
+    assert(
+      flavor != StockfishFlavor.latestNoNNUE ||
+          (smallNetPath != null && bigNetPath != null),
+      'NNUE evaluation requires smallNetPath and bigNetPath',
+    );
+
+    // Claiming the slot before the first await is what makes two concurrent
+    // create() calls for one flavor resolve to a refusal rather than to two
+    // engines racing each other into the same native globals.
+    final engine =
+        Stockfish._(flavor)
+          .._variant = variant
+          .._smallNetPath = smallNetPath
+          .._bigNetPath = bigNetPath;
+    engine._claimSlot(flavor);
+    if (onStdout != null) engine._stdoutController.stream.listen(onStdout);
+
+    try {
+      await engine._doStart();
+    } catch (_) {
+      engine._release(StockfishState.error, closeStdout: true);
+      rethrow;
+    }
+
+    return engine;
+  }
+
+  final bool _legacy;
+
+  StockfishFlavor _flavor;
   String? _variant;
   String? _smallNetPath;
   String? _bigNetPath;
 
-  /// The flavor of Stockfish currently configured.
+  /// The flavor of Stockfish this engine runs.
   StockfishFlavor get flavor => _flavor;
 
   /// The variant of chess. (Only for [StockfishFlavor.variant]).
@@ -72,13 +161,24 @@ class Stockfish {
 
   Future<void>? _pendingStart;
   Future<void>? _pendingQuit;
+  Future<void>? _pendingDispose;
 
-  Stockfish._();
+  /// Whether [dispose] has been called, recorded before anything it does can
+  /// make the engine exit, so that [_onEngineExit] knows the exit was asked for.
+  bool _disposing = false;
 
   /// The current state of the underlying C++ engine.
+  ///
+  /// A handle returned by [create] is [StockfishState.ready]. It ends as
+  /// [StockfishState.disposed] — after [dispose], or after the engine exits
+  /// cleanly on its own, as it does when sent `quit` over [stdin] — or as
+  /// [StockfishState.error] if it died badly. None of those is recoverable on
+  /// this handle: create another one.
   ValueListenable<StockfishState> get state => _state;
 
   /// The standard output stream.
+  ///
+  /// Closes when the engine is disposed.
   Stream<String> get stdout => _stdoutController.stream;
 
   /// A snapshot of what the native engine is doing.
@@ -121,7 +221,7 @@ class Stockfish {
   ///
   /// Negative values are failures described by [describeWriteCode]. They are
   /// logged here so that every caller reports them the same way, and returned
-  /// so that callers who cannot simply carry on — [quit] in particular — can
+  /// so that callers who cannot simply carry on — [dispose] in particular — can
   /// act on them.
   int _write(String line) {
     _logger.finest('[stdin] $line');
@@ -137,17 +237,298 @@ class Stockfish {
         // The engine can no longer be sent a coherent command stream, so this
         // session is over whatever the engine itself does next. Failing the
         // state here makes the rest of the API refuse work until the caller
-        // restarts, instead of letting commands accumulate on a broken channel
-        // and be answered with nonsense.
+        // starts another engine, instead of letting commands accumulate on a
+        // broken channel and be answered with nonsense.
         _logger.severe(
           'The engine session is unrecoverable and has been marked failed. '
-          'Call start() again to obtain a working engine.',
+          'Dispose this engine and create another one.',
         );
         _state._setValue(StockfishState.error);
       }
     }
     return written;
   }
+
+  /// Takes [flavor]'s slot, or throws if another engine still holds it.
+  void _claimSlot(StockfishFlavor flavor) {
+    if (_live.containsKey(flavor)) {
+      throw StateError(
+        'A ${flavor.name} engine is already live. Dispose it before creating '
+        'another one of the same flavor. (Engines of other flavors are '
+        'unaffected and can run alongside it.)',
+      );
+    }
+    _flavor = flavor;
+    _live[flavor] = this;
+  }
+
+  /// Gives this flavor's slot back, if this engine still holds it.
+  void _releaseSlot() {
+    if (identical(_live[_flavor], this)) _live.remove(_flavor);
+  }
+
+  Future<void> _doStart() async {
+    late final _RunningEngine engine;
+    engine = _RunningEngine(
+      onExit: (exitCode) {
+        if (identical(_engine, engine)) _engine = null;
+        _onEngineExit(exitCode);
+        // When dispose() asked for the exit it detaches itself, once it has
+        // waited for the reader to let go of the pipe. Every other way an engine
+        // can end has nobody waiting, so the ports are closed here instead.
+        if (!_disposing) engine.detach();
+      },
+      onStdout: (line) {
+        if (!_stdoutController.isClosed) _stdoutController.add(line);
+      },
+      onReaderFailed: (error) {
+        _logger.severe(
+          'The reader for the ${_flavor.name} engine died, so nothing is draining its '
+          'output any more. The engine will stop answering as soon as its pipe fills, so '
+          'this session is over. $diagnostics\n$error',
+        );
+        _state._setValue(StockfishState.error);
+      },
+    );
+    _engine = engine;
+
+    final success = await _spawnIsolates(
+      engine.mainPort.sendPort,
+      engine.stdoutPort.sendPort,
+      _flavor,
+    );
+
+    if (!success) {
+      _logger.severe('Failed to spawn isolates');
+      _engine = null;
+      engine.detach();
+      throw Exception('Failed to spawn isolates');
+    }
+
+    _state._setValue(StockfishState.starting);
+
+    try {
+      // Wait for the engine to be ready by checking the first non-empty line (usually its name).
+      await _awaitLine(engine, (line) => line.isNotEmpty);
+
+      _state._setValue(StockfishState.ready);
+
+      // Switch to the engine to UCI protocol
+      stdin = 'uci';
+      await _awaitLine(engine, (line) => line == 'uciok');
+    } on TimeoutException {
+      // Read the diagnostics before asking the engine to quit: doing so moves
+      // it on to another phase and would erase the evidence of where it stalled.
+      final stalledAt = diagnostics;
+      _logger.severe(
+        'The engine (${_flavor.name}) did not become ready in time '
+        '(${kStartTimeout.inSeconds}s). $stalledAt',
+      );
+      await _quitEngine(engine);
+      throw TimeoutException(
+        'Stockfish (${_flavor.name}) did not become ready in time. $stalledAt',
+        kStartTimeout,
+      );
+    }
+
+    if (_flavor == StockfishFlavor.variant && _variant != null) {
+      stdin = 'setoption name UCI_Variant value $_variant';
+    }
+
+    if (_flavor == StockfishFlavor.latestNoNNUE &&
+        _bigNetPath != null &&
+        _smallNetPath != null) {
+      stdin = 'setoption name EvalFile value $_bigNetPath';
+      stdin = 'setoption name EvalFileSmall value $_smallNetPath';
+    }
+  }
+
+  /// Waits for [engine] to print a line matching [test].
+  ///
+  /// Throws a [TimeoutException] after [kStartTimeout], and gives up as soon as
+  /// the engine exits instead: an engine the native library refused to run
+  /// reports that in milliseconds, and waiting out the timeout would replace a
+  /// precise answer with a vague one.
+  Future<void> _awaitLine(
+    _RunningEngine engine,
+    bool Function(String line) test,
+  ) {
+    final completer = Completer<void>();
+
+    final subscription = _stdoutController.stream.listen((line) {
+      if (!completer.isCompleted && test(line)) completer.complete();
+    });
+
+    unawaited(
+      engine.exited.future.then((exitCode) {
+        if (completer.isCompleted) return;
+        completer.completeError(
+          Exception(
+            'The ${_flavor.name} engine exited while starting '
+            '(code $exitCode: ${describeMainExitCode(exitCode)}) '
+            'and will never become ready. $diagnostics',
+          ),
+        );
+      }),
+    );
+
+    return completer.future
+        .timeout(kStartTimeout)
+        .whenComplete(subscription.cancel);
+  }
+
+  /// Quits the engine and frees its flavor's slot.
+  ///
+  /// Completes when the engine has exited. It is safe to call more than once
+  /// and safe to call on an engine that has already died; later calls wait for
+  /// the first.
+  ///
+  /// An engine that does not exit within [kQuitTimeout] is abandoned: the slot
+  /// is freed and everything the engine sends afterwards is dropped, but it
+  /// keeps the native state it is stuck in, so a later [create] for this flavor
+  /// may be refused until the process restarts.
+  ///
+  /// An engine that does exit is also waited on for [kReaderStopTimeout], so
+  /// that its reader has let go of the output pipe before the next engine of
+  /// this flavor can drain it.
+  Future<void> dispose() {
+    if (_legacy) {
+      // Disposing the singleton would close the stdout stream every caller
+      // shares and leave no way back, so this is refused rather than honoured.
+      throw StateError(
+        'Stockfish.instance cannot be disposed: it is a process-wide singleton '
+        'and callers share its streams. Use quit(), or migrate to an engine of '
+        'your own from Stockfish.create().',
+      );
+    }
+    _disposing = true;
+    return _pendingDispose ??= _doDispose();
+  }
+
+  Future<void> _doDispose() async {
+    final engine = _engine;
+    if (engine != null) await _quitEngine(engine);
+
+    // A handle that already failed goes on saying so. Disposing it is not what
+    // went wrong, and of the two facts the failure is the one worth keeping.
+    _release(
+      _state.value == StockfishState.error
+          ? StockfishState.error
+          : StockfishState.disposed,
+      closeStdout: true,
+    );
+  }
+
+  /// Asks [engine] to quit and waits for it to exit.
+  ///
+  /// Waiting matters even where the caller has stopped caring: another engine
+  /// of this flavor may be created as soon as this returns, and one still
+  /// winding down would otherwise report its exit while its successor runs.
+  Future<void> _quitEngine(_RunningEngine engine) async {
+    if (!engine.exited.isCompleted) {
+      if (_write('quit') < 0) {
+        _logger.severe(
+          'The engine could not be asked to quit and will never report an '
+          'exit. Giving up on a clean shutdown. $diagnostics',
+        );
+      } else {
+        try {
+          await engine.exited.future.timeout(kQuitTimeout);
+        } on TimeoutException {
+          _logger.severe(
+            'The ${_flavor.name} engine did not exit in time '
+            '(${kQuitTimeout.inSeconds}s). $diagnostics '
+            'It is abandoned: nothing it sends from now on is delivered, but '
+            'until this process is restarted a new ${_flavor.name} engine may '
+            'be refused by the native library, because the engine keeps its '
+            'state in process globals the stuck one still owns.',
+          );
+        }
+      }
+    }
+
+    // The engine has gone, but its reader has not necessarily noticed: it learns
+    // that from the quit marker in the pipe, and until it has read it the isolate
+    // is still blocked on that pipe. The next create() drains the pipe before it
+    // starts its engine, and a drain that beats the reader to the marker leaves
+    // it blocked forever -- a second reader on the new engine's output, taking
+    // lines at random from the isolate that is supposed to deliver them.
+    //
+    // Only worth waiting for when the engine actually exited: an abandoned one
+    // never writes the marker, and its reader is never going to stop.
+    if (engine.exited.isCompleted) {
+      try {
+        await engine.readerStopped.future.timeout(kReaderStopTimeout);
+      } on TimeoutException {
+        _logger.warning(
+          'The ${_flavor.name} engine exited but its reader did not let go of '
+          'the pipe within ${kReaderStopTimeout.inMilliseconds}ms. A new engine '
+          'of this flavor may lose output to it. $diagnostics',
+        );
+      }
+    }
+
+    if (identical(_engine, engine)) _engine = null;
+    engine.detach();
+  }
+
+  /// Ends this engine's session: slot returned, ports closed, state published.
+  void _release(StockfishState finalState, {required bool closeStdout}) {
+    _releaseSlot();
+    _engine?.detach();
+    _engine = null;
+    _state._setValue(finalState);
+    if (closeStdout && !_stdoutController.isClosed) _stdoutController.close();
+  }
+
+  void _onEngineExit(int exitCode) {
+    if (exitCode == 0) {
+      _logger.fine('The engine exited cleanly.');
+    } else {
+      _logger.severe(
+        'The engine exited with code $exitCode: '
+        '${describeMainExitCode(exitCode)}. $diagnostics',
+      );
+    }
+
+    if (_legacy) {
+      _releaseSlot();
+      _state._setValue(
+        exitCode == 0 ? StockfishState.initial : StockfishState.error,
+      );
+      return;
+    }
+
+    // When dispose() asked for the exit, it publishes the final state itself.
+    if (_disposing) return;
+
+    // The handle is finished either way, but only a bad exit is a failure: an
+    // engine told `quit` over [stdin] exits cleanly and nothing went wrong.
+    //
+    // The flavor is free whatever the code, because the engine is provably
+    // gone — that is exactly what the native library's re-entry guard keys off.
+    // Holding the slot until dispose() would only make the caller ask
+    // permission to replace an engine that no longer exists.
+    _release(
+      exitCode == 0 ? StockfishState.disposed : StockfishState.error,
+      closeStdout: true,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Deprecated singleton facade.
+  // ---------------------------------------------------------------------------
+
+  /// The singleton instance of Stockfish.
+  @Deprecated(
+    'Use Stockfish.create() and dispose() instead: engines are now per-flavor '
+    'handles, so several flavors can be live at once and each has its own '
+    'state and streams. This singleton will be removed in the next release.',
+  )
+  static final Stockfish instance = Stockfish._(
+    StockfishFlavor.sf16,
+    legacy: true,
+  );
 
   /// Starts the C++ engine.
   ///
@@ -156,6 +537,10 @@ class Stockfish {
   /// When [flavor] is [StockfishFlavor.latestNoNNUE], [smallNetPath] and [bigNetPath] must be provided.
   ///
   /// Throws a [TimeoutException] if the engine does not become ready in time.
+  @Deprecated(
+    'Use Stockfish.create() instead, which returns an engine of its own '
+    'rather than reconfiguring a shared one.',
+  )
   Future<void> start({
     /// The flavor of Stockfish to use.
     StockfishFlavor flavor = StockfishFlavor.sf16,
@@ -171,6 +556,11 @@ class Stockfish {
     /// Full path to the big net file for NNUE evaluation. Only used for [StockfishFlavor.latestNoNNUE].
     String? bigNetPath,
   }) {
+    assert(
+      _legacy,
+      'start() only exists on the deprecated Stockfish.instance. An engine '
+      'from Stockfish.create() is already started.',
+    );
     assert(
       flavor != StockfishFlavor.latestNoNNUE ||
           (smallNetPath != null && bigNetPath != null),
@@ -191,75 +581,28 @@ class Stockfish {
       );
     }
 
-    _flavor = flavor;
+    // The singleton competes for the same per-flavor slots as create(), so a
+    // caller half-migrated to handles cannot end up with two engines of one
+    // flavor by using both APIs.
+    _claimSlot(flavor);
+
     _variant = variant;
     _smallNetPath = smallNetPath;
     _bigNetPath = bigNetPath;
 
-    return _pendingStart = _doStart().whenComplete(() => _pendingStart = null);
+    return _pendingStart = _legacyStart().whenComplete(
+      () => _pendingStart = null,
+    );
   }
 
-  Future<void> _doStart() async {
-    late final _RunningEngine engine;
-    engine = _RunningEngine(
-      onExit: (exitCode) {
-        if (identical(_engine, engine)) _engine = null;
-        _onEngineExit(exitCode);
-      },
-      onStdout: _stdoutController.sink.add,
-    );
-    _engine = engine;
-
-    final success = await _spawnIsolates(
-      engine.mainPort.sendPort,
-      engine.stdoutPort.sendPort,
-      _flavor,
-    );
-
-    if (!success) {
-      _logger.severe('Failed to spawn isolates');
-      _engine = null;
-      engine.dispose();
-      _state._setValue(StockfishState.error);
-      throw Exception('Failed to spawn isolates');
-    }
-
-    _state._setValue(StockfishState.starting);
-
+  Future<void> _legacyStart() async {
     try {
-      // Wait for the engine to be ready by checking the first non-empty line (usually its name).
-      await stdout.firstWhere((line) => line.isNotEmpty).timeout(kStartTimeout);
-
-      _state._setValue(StockfishState.ready);
-
-      // Switch to the engine to UCI protocol
-      stdin = 'uci';
-      await stdout.firstWhere((line) => line == "uciok").timeout(kStartTimeout);
-    } on TimeoutException {
-      // Read the diagnostics before asking the engine to quit: doing so moves
-      // it on to another phase and would erase the evidence of where it stalled.
-      final stalledAt = diagnostics;
-      _logger.severe(
-        'The engine (${_flavor.name}) did not become ready in time '
-        '(${kStartTimeout.inSeconds}s). $stalledAt',
-      );
-      await _abandonEngine(engine);
-      _state._setValue(StockfishState.error);
-      throw TimeoutException(
-        'Stockfish (${_flavor.name}) did not become ready in time. $stalledAt',
-        kStartTimeout,
-      );
-    }
-
-    if (_flavor == StockfishFlavor.variant && _variant != null) {
-      stdin = 'setoption name UCI_Variant value $_variant';
-    }
-
-    if (_flavor == StockfishFlavor.latestNoNNUE &&
-        _bigNetPath != null &&
-        _smallNetPath != null) {
-      stdin = 'setoption name EvalFile value $_bigNetPath';
-      stdin = 'setoption name EvalFileSmall value $_smallNetPath';
+      await _doStart();
+    } catch (_) {
+      // The singleton survives a failed start and can be started again, so it
+      // keeps its stdout stream; only the slot and the state are reset.
+      _release(StockfishState.error, closeStdout: false);
+      rethrow;
     }
   }
 
@@ -270,7 +613,17 @@ class Stockfish {
   /// After quitting, the engine can be started again with [start].
   ///
   /// It is safe to call [quit] multiple times; subsequent calls will wait for the first to complete.
+  @Deprecated(
+    'Use dispose() on an engine from Stockfish.create() instead. Unlike quit(), '
+    'it also gives up on an engine that will not exit.',
+  )
   Future<void> quit() {
+    assert(
+      _legacy,
+      'quit() only exists on the deprecated Stockfish.instance. Use dispose() '
+      'on an engine from Stockfish.create().',
+    );
+
     if (_pendingQuit != null) {
       return _pendingQuit!;
     }
@@ -278,6 +631,7 @@ class Stockfish {
     switch (_state.value) {
       case StockfishState.initial:
       case StockfishState.error:
+      case StockfishState.disposed:
         return Future.value();
       case StockfishState.starting:
       case StockfishState.ready:
@@ -318,73 +672,64 @@ class Stockfish {
         'The engine could not be asked to quit and will never report an exit. '
         'Giving up on a clean shutdown. $diagnostics',
       );
+      _releaseSlot();
       _state._setValue(StockfishState.error);
     }
-  }
-
-  /// Asks an engine that failed to start to quit, and waits for it to exit.
-  ///
-  /// Waiting matters: [start] may be called again as soon as it throws, and an
-  /// engine still winding down would otherwise report its exit while its
-  /// successor is running, resetting the state of a perfectly healthy engine.
-  ///
-  /// An engine that does not exit within [kQuitTimeout] is given up on, but it
-  /// is disposed all the same so that whatever it sends afterwards is dropped.
-  Future<void> _abandonEngine(_RunningEngine engine) async {
-    _write('quit');
-    try {
-      await engine.exited.future.timeout(kQuitTimeout);
-    } on TimeoutException {
-      _logger.severe(
-        'The engine did not exit in time (${kQuitTimeout.inSeconds}s) after a '
-        'failed start. $diagnostics '
-        'Until this process is restarted, further start() calls will be refused '
-        'by the native library, because the engine keeps its state in process '
-        'globals that the stuck engine still owns.',
-      );
-    } finally {
-      if (identical(_engine, engine)) _engine = null;
-      engine.dispose();
-    }
-  }
-
-  void _onEngineExit(int exitCode) {
-    if (exitCode == 0) {
-      _logger.fine('The engine exited cleanly.');
-    } else {
-      _logger.severe(
-        'The engine exited with code $exitCode: '
-        '${describeMainExitCode(exitCode)}. $diagnostics',
-      );
-    }
-
-    _state._setValue(
-      exitCode == 0 ? StockfishState.initial : StockfishState.error,
-    );
   }
 }
 
 /// The ports of a single engine, and its lifetime.
 ///
 /// Each engine gets its own ports so that closing them is enough to make an
-/// abandoned engine invisible to the [Stockfish] singleton.
+/// abandoned engine invisible to the [Stockfish] handle that started it.
 class _RunningEngine {
   _RunningEngine({
     required void Function(int exitCode) onExit,
     required void Function(String line) onStdout,
+    required void Function(String error) onReaderFailed,
   }) {
     mainPort.listen((message) {
       _logger.fine('The main isolate sent $message');
-      dispose();
-      onExit(message is int ? message : 1);
+      final code = message is int ? message : 1;
+      // The only thing that completes [exited]; see its doc comment.
+      if (!exited.isCompleted) exited.complete(code);
+      onExit(code);
     });
 
     stdoutPort.listen((message) {
-      if (message is String) {
-        _logger.finest('[stdout] $message');
-        onStdout(message);
-      } else {
+      // The reader's own end of stream, not engine output.
+      if (message == null) {
+        _logger.fine('The stdout isolate has let go of the pipe');
+        if (!readerStopped.isCompleted) readerStopped.complete();
+        return;
+      }
+
+      // The reader reporting that it died rather than finished.
+      if (message is Map) {
+        onReaderFailed('${message['error']}\n${message['stackTrace']}');
+        return;
+      }
+
+      // A batch of lines from the reader, or a single line from a test's fake.
+      final lines = switch (message) {
+        final List<Object?> batch => batch,
+        final String line => [line],
+        _ => const <Object?>[],
+      };
+
+      if (lines.isEmpty) {
         _logger.fine('The stdout isolate sent $message');
+        return;
+      }
+
+      // Checked once rather than per line: this runs for every line the engine
+      // writes, and the interpolation below is not free when nobody is listening.
+      final trace = _logger.isLoggable(Level.FINEST);
+
+      for (final line in lines) {
+        if (line is! String) continue;
+        if (trace) _logger.finest('[stdout] $line');
+        onStdout(line);
       }
     });
   }
@@ -392,18 +737,33 @@ class _RunningEngine {
   final mainPort = ReceivePort('Stockfish main isolate port');
   final stdoutPort = ReceivePort('Stockfish stdout isolate port');
 
-  /// Completes when the engine has exited, or when it is disposed.
-  final exited = Completer<void>();
+  /// Completes with the engine's exit code when it has actually exited.
+  ///
+  /// Completed only by the main isolate reporting that the engine's `main()`
+  /// returned, and never by [detach]: a handle that has stopped listening says
+  /// nothing about whether the engine is still running. [Stockfish._quitEngine]
+  /// skips the `quit` write for an engine that has already exited, so anything
+  /// else completing this would abandon a live engine still holding its
+  /// flavor's native slot.
+  final exited = Completer<int>();
 
-  bool _disposed = false;
+  /// Completes when the reader isolate has finished with the output pipe.
+  ///
+  /// Not the same event as the engine exiting: the reader learns of that from
+  /// the quit marker in the pipe, which it may not have read yet.
+  final readerStopped = Completer<void>();
+
+  bool _detached = false;
 
   /// Stops listening to this engine's isolates.
-  void dispose() {
-    if (_disposed) return;
-    _disposed = true;
+  ///
+  /// Says nothing about the engine, which may still be running: this is the
+  /// handle letting go, not the engine ending.
+  void detach() {
+    if (_detached) return;
+    _detached = true;
     mainPort.close();
     stdoutPort.close();
-    if (!exited.isCompleted) exited.complete();
   }
 }
 
@@ -478,6 +838,25 @@ void _isolateMain(_IsolateArgs args) {
 
 void _isolateStdout(_IsolateArgs args) {
   final (stdoutPort, flavor) = args;
+
+  try {
+    _readStdout(stdoutPort, flavor);
+  } catch (error, stackTrace) {
+    // This isolate is the only thing draining the engine's pipe. If it stops
+    // without saying so the pipe fills, the engine blocks in write() inside its
+    // UCI loop and answers nothing from then on -- a wedge with no visible
+    // cause. Reporting the failure lets the handle fail the engine instead.
+    stdoutPort.send({'error': '$error', 'stackTrace': '$stackTrace'});
+  }
+
+  // Tells the handle the pipe is free. Until this arrives the isolate is
+  // still blocked reading it, and a create() that drained the pipe in the
+  // meantime would leave it blocked forever -- a second reader stealing the
+  // next engine's output.
+  stdoutPort.send(null);
+}
+
+void _readStdout(SendPort stdoutPort, StockfishFlavor flavor) {
   final bindings = _getBindings(flavor);
 
   String previous = '';
@@ -493,9 +872,12 @@ void _isolateStdout(_IsolateArgs args) {
     final data = previous + stdout;
     final lines = data.split('\n');
     previous = lines.removeLast();
-    for (final line in lines) {
-      stdoutPort.send(line);
-    }
+
+    // One message for the whole chunk rather than one per line. A page of
+    // engine output holds dozens of `info` lines during a multi-PV search, and
+    // every port message is an event the main isolate has to turn its loop for
+    // -- which is the isolate also running the UI and the start-up timeouts.
+    if (lines.isNotEmpty) stdoutPort.send(lines);
   }
 }
 
