@@ -1,5 +1,17 @@
 ## 0.6.0
 
+**Breaking changes — Stockfish 19:**
+
+- Update to Stockfish 19 for both non-variant flavours.
+- `StockfishFlavor.sf16` is removed and replaced by `StockfishFlavor.light`:
+  Stockfish 19 with a ~1MB embedded net, in place of Stockfish 16 with a 38MB
+  one. It is the new default for `Stockfish.create()`. The
+  `multistockfish_sf16` package is retired in favour of `multistockfish_light`.
+- `bigNetPath` and `smallNetPath` are replaced by a single `nnuePath`, and
+  `Stockfish.latestBigNNUE`/`latestSmallNNUE` by `Stockfish.latestNNUE`.
+  Stockfish 19 evaluates with one network, so `StockfishFlavor.latestNoNNUE`
+  now needs one file instead of two.
+
 **Breaking changes — per-flavour engine handles:**
 
 An engine is now a handle you create and dispose, rather than a process-wide
@@ -95,8 +107,8 @@ below):
   instead of piling onto a session the engine can no longer read correctly; a
   write that simply was not delivered leaves the engine usable.
 
-Requires `multistockfish_chess` ^0.5.0, `multistockfish_sf16` ^0.3.0 and
-`multistockfish_variant` ^0.3.0.
+Requires `multistockfish_chess` ^0.6.0, `multistockfish_light` ^0.1.0 and
+`multistockfish_variant` ^0.4.0.
 
 ## 0.5.0
 

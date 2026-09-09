@@ -9,8 +9,8 @@ Multiple flavors of Stockfish Engine.
 
 This plugin provides the following Stockfish engines:
 
-* [Stockfish 16](https://stockfishchess.org), with embedded NNUE (38MB)
-* [Stockfish 18](https://stockfishchess.org), without embedded NNUE
+* [Stockfish 19](https://stockfishchess.org), with a small embedded NNUE (~1MB)
+* [Stockfish 19](https://stockfishchess.org), without embedded NNUE
 * [Fairy-Stockfish](https://fairy-stockfish.github.io), for chess variants
 
 ## Usage
@@ -21,23 +21,24 @@ An engine is a handle you create and dispose. `Stockfish.create()` starts one
 and completes when it is ready for commands.
 
 > [!NOTE]
-> When using the `StockfishFlavor.latestNoNNUE` flavor, you need to download the `.nnue` files before
-> starting an evaluation, since it is not embedded in the binary.
+> When using the `StockfishFlavor.latestNoNNUE` flavor, you need to download the `.nnue` file before
+> starting an evaluation, since it is not embedded in the binary. Stockfish 19
+> evaluates with a single net, replacing the big/small pair Stockfish 18 used.
+> `StockfishFlavor.light` embeds a ~1MB net instead, so it needs no download.
 
 ```dart
 import 'package:multistockfish/multistockfish.dart';
 
-// defaults to StockfishFlavor.sf16
+// defaults to StockfishFlavor.light
 final stockfish = await Stockfish.create();
 
 // state is a ValueListenable<StockfishState>
 print(stockfish.state.value); // StockfishState.ready
 
-// for latestNoNNUE, NNUE file paths are required
+// for latestNoNNUE, the NNUE file path is required
 final latest = await Stockfish.create(
   flavor: StockfishFlavor.latestNoNNUE,
-  bigNetPath: '/path/to/big.nnue',
-  smallNetPath: '/path/to/small.nnue',
+  nnuePath: '/path/to/nn-1a298aa575a0.nnue',
 );
 ```
 
@@ -51,14 +52,14 @@ flavors are independent and can run side by side, each with its own `stdin`,
 
 ```dart
 // An NNUE engine for analysis and a Fairy-Stockfish opponent, at the same time.
-final analysis = await Stockfish.create(flavor: StockfishFlavor.sf16);
+final analysis = await Stockfish.create(flavor: StockfishFlavor.light);
 final opponent = await Stockfish.create(
   flavor: StockfishFlavor.variant,
   variant: 'crazyhouse',
 );
 
-// Refused: sf16 is taken until `analysis` is disposed.
-await Stockfish.create(flavor: StockfishFlavor.sf16); // throws StateError
+// Refused: light is taken until `analysis` is disposed.
+await Stockfish.create(flavor: StockfishFlavor.light); // throws StateError
 ```
 
 An engine that ends releases its flavor's slot without waiting to be disposed,

@@ -7,7 +7,7 @@
 // redirection won, and the two engines' output arrived interleaved in one place.
 //
 // Now each library reads and writes streams of its own, bound straight to its
-// own pipe. This test links sf16 and Fairy-Stockfish into a single binary -- the
+// own pipe. This test links light and Fairy-Stockfish into a single binary -- the
 // same way iOS links them under Swift Package Manager -- boots both, searches on
 // both at the same time, and checks that neither one's traffic reaches the
 // other's channel and that the process keeps its own stdout throughout.
@@ -26,10 +26,10 @@
 #include <unistd.h>
 
 extern "C" {
-int stockfish_sf16_init();
-int stockfish_sf16_main();
-ssize_t stockfish_sf16_stdin_write(char *data);
-char *stockfish_sf16_stdout_read();
+int stockfish_light_init();
+int stockfish_light_main();
+ssize_t stockfish_light_stdin_write(char *data);
+char *stockfish_light_stdout_read();
 
 int stockfish_variant_init();
 int stockfish_variant_main();
@@ -79,14 +79,14 @@ struct Channel
   }
 };
 
-static Channel g_sf16;
+static Channel g_light;
 static Channel g_variant;
 
-static void send_sf16(const char *command)
+static void send_light(const char *command)
 {
   char buffer[512];
   snprintf(buffer, sizeof(buffer), "%s", command);
-  stockfish_sf16_stdin_write(buffer);
+  stockfish_light_stdin_write(buffer);
 }
 
 static void send_variant(const char *command)
@@ -105,12 +105,12 @@ int main()
 
   fprintf(stderr, "\n-- both engines resident --\n");
 
-  check(stockfish_sf16_init() == 0, "sf16 initializes");
+  check(stockfish_light_init() == 0, "light initializes");
   check(stockfish_variant_init() == 0, "variant initializes");
 
-  std::thread reader_sf16([] {
-    while (char *line = stockfish_sf16_stdout_read())
-      g_sf16.push(line);
+  std::thread reader_light([] {
+    while (char *line = stockfish_light_stdout_read())
+      g_light.push(line);
   });
   std::thread reader_variant([] {
     while (char *line = stockfish_variant_stdout_read())
@@ -118,43 +118,43 @@ int main()
   });
 
   // Before P2 the second of these two would have taken the first one's channel.
-  std::thread engine_sf16([] { stockfish_sf16_main(); });
+  std::thread engine_light([] { stockfish_light_main(); });
   std::thread engine_variant([] { stockfish_variant_main(); });
 
-  check(g_sf16.wait_for("Stockfish 16"), "sf16 greets on its own channel");
+  check(g_light.wait_for("Stockfish 19"), "light greets on its own channel");
   check(g_variant.wait_for("Fairy-Stockfish"), "variant greets on its own channel");
 
-  send_sf16("uci\n");
+  send_light("uci\n");
   send_variant("uci\n");
-  check(g_sf16.wait_for("uciok"), "sf16 answers uciok");
+  check(g_light.wait_for("uciok"), "light answers uciok");
   check(g_variant.wait_for("uciok"), "variant answers uciok");
 
-  check(!g_sf16.saw("Fairy-Stockfish"), "no variant output in the sf16 channel");
-  check(!g_variant.saw("Stockfish 16"), "no sf16 output in the variant channel");
+  check(!g_light.saw("Fairy-Stockfish"), "no variant output in the light channel");
+  check(!g_variant.saw("Stockfish 19"), "no light output in the variant channel");
 
   // --- searching on both at the same time ----------------------------------
   fprintf(stderr, "\n-- searching on both at once --\n");
 
-  send_sf16("position startpos\n");
-  send_sf16("go depth 12\n");
+  send_light("position startpos\n");
+  send_light("go depth 12\n");
 
   send_variant("setoption name UCI_Variant value crazyhouse\n");
   send_variant("position startpos\n");
   send_variant("go depth 8\n");
 
-  check(g_sf16.wait_for("bestmove"), "sf16 returns a bestmove while variant searches");
-  check(g_variant.wait_for("bestmove"), "variant returns a bestmove while sf16 searches");
+  check(g_light.wait_for("bestmove"), "light returns a bestmove while variant searches");
+  check(g_variant.wait_for("bestmove"), "variant returns a bestmove while light searches");
 
   // The variant list is something only Fairy-Stockfish announces, which makes it
   // a good marker for traffic that must never turn up on the other channel.
   check(g_variant.saw("crazyhouse"), "variant really is the variant engine");
-  check(!g_sf16.saw("crazyhouse"), "the variant's traffic never reached sf16's channel");
+  check(!g_light.saw("crazyhouse"), "the variant's traffic never reached light's channel");
 
-  send_sf16("quit\n");
+  send_light("quit\n");
   send_variant("quit\n");
-  engine_sf16.join();
+  engine_light.join();
   engine_variant.join();
-  reader_sf16.join();
+  reader_light.join();
   reader_variant.join();
 
   // --- and the host kept its own descriptors -------------------------------

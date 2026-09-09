@@ -9,7 +9,9 @@
 #include <mutex>
 #include <stdio.h>
 #include <unistd.h>
+#include <utility>
 
+#include "Stockfish/src/attacks.h"
 #include "Stockfish/src/bitboard.h"
 #include "Stockfish/src/misc.h"
 #include "Stockfish/src/position.h"
@@ -192,13 +194,19 @@ namespace StockfishLatest {
     sfio::out() << engine_info() << std::endl;
 
     set_step("bitboards");
-    Bitboards::init();
+    // Stockfish 19 moved the attack-table initialisation out of Bitboards into
+    // its own Attacks namespace; it is still the same one-time table build.
+    Attacks::init();
     set_step("position");
     Position::init();
 
     {
       set_step("uci_engine");
-      UCIEngine uci(argc, argv);
+      // Stockfish 19's UCIEngine takes a CommandLine rather than argc/argv.
+      // Built as a named variable because `UCIEngine uci(CommandLine(argc,
+      // argv))` would parse as a function declaration.
+      auto cli = CommandLine(argc, argv);
+      UCIEngine uci(std::move(cli));
 
       set_step("tune");
       Tune::init(uci.engine_options());

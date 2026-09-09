@@ -12,11 +12,9 @@ import 'package:path_provider/path_provider.dart'
 import 'stockfish_output.dart';
 
 const _kDownloadUrl = 'https://tests.stockfishchess.org/api/nn/';
-const _kBigNet = Stockfish.latestBigNNUE;
-const _kSmallNet = Stockfish.latestSmallNNUE;
+const _kNet = Stockfish.latestNNUE;
 
-final _bigNetUrl = Uri.parse('$_kDownloadUrl$_kBigNet');
-final _smallNetUrl = Uri.parse('$_kDownloadUrl$_kSmallNet');
+final _netUrl = Uri.parse('$_kDownloadUrl$_kNet');
 
 void main() {
   Logger.root.level = Level.ALL;
@@ -29,7 +27,7 @@ void main() {
   runApp(const MyApp());
 }
 
-typedef NNUEFiles = ({String bigNetPath, String smallNetPath});
+typedef NNUEFiles = ({String nnuePath});
 
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
@@ -39,7 +37,7 @@ class MyApp extends StatefulWidget {
 
 class _AppState extends State<MyApp> {
   Directory? appSupportDirectory;
-  StockfishFlavor flavor = StockfishFlavor.sf16;
+  StockfishFlavor flavor = StockfishFlavor.light;
 
   /// The most recent engine, kept after it ends so its final state stays on
   /// screen.
@@ -60,11 +58,9 @@ class _AppState extends State<MyApp> {
 
   Future<NNUEFiles> get nnueFiles => _nnueFilesCompleter.future;
 
-  final ValueNotifier<double> _bigNetProgress = ValueNotifier(0.0);
-  final ValueNotifier<double> _smallNetProgress = ValueNotifier(0.0);
+  final ValueNotifier<double> _netProgress = ValueNotifier(0.0);
 
-  ValueListenable<double> get bigNetProgress => _bigNetProgress;
-  ValueListenable<double> get smallNetProgress => _smallNetProgress;
+  ValueListenable<double> get netProgress => _netProgress;
 
   String? variant = '3check';
 
@@ -136,8 +132,7 @@ class _AppState extends State<MyApp> {
     final started = await Stockfish.create(
       flavor: flavor,
       variant: variant,
-      bigNetPath: _nnueFiles?.bigNetPath,
-      smallNetPath: _nnueFiles?.smallNetPath,
+      nnuePath: _nnueFiles?.nnuePath,
       onStdout: _console.add,
     );
     setState(() => engine = started);
@@ -176,10 +171,9 @@ class _AppState extends State<MyApp> {
 
   Future<void> _fetchNNUEFiles() async {
     appSupportDirectory ??= await getApplicationSupportDirectory();
-    final bigNet = File('${appSupportDirectory!.path}/$_kBigNet');
-    final smallNet = File('${appSupportDirectory!.path}/$_kSmallNet');
-    if (await bigNet.exists() && await smallNet.exists()) {
-      _nnueFiles = (bigNetPath: bigNet.path, smallNetPath: smallNet.path);
+    final net = File('${appSupportDirectory!.path}/$_kNet');
+    if (await net.exists()) {
+      _nnueFiles = (nnuePath: net.path);
       _nnueFilesCompleter.complete(_nnueFiles);
       return;
     }
@@ -192,29 +186,20 @@ class _AppState extends State<MyApp> {
       }
     }
 
-    debugPrint('Downloading NNUE files...');
+    debugPrint('Downloading NNUE file...');
     try {
-      await Future.wait([
-        downloadFile(
-          _bigNetUrl,
-          bigNet,
-          onProgress: (received, length) {
-            _bigNetProgress.value = received / length;
-          },
-        ),
-        downloadFile(
-          _smallNetUrl,
-          smallNet,
-          onProgress: (received, length) {
-            _smallNetProgress.value = received / length;
-          },
-        ),
-      ]);
+      await downloadFile(
+        _netUrl,
+        net,
+        onProgress: (received, length) {
+          _netProgress.value = received / length;
+        },
+      );
     } catch (e) {
-      debugPrint('Failed to download NNUE files: $e');
+      debugPrint('Failed to download NNUE file: $e');
     }
 
-    _nnueFiles = (bigNetPath: bigNet.path, smallNetPath: smallNet.path);
+    _nnueFiles = (nnuePath: net.path);
     _nnueFilesCompleter.complete(_nnueFiles);
   }
 
@@ -232,33 +217,13 @@ class _AppState extends State<MyApp> {
                   Padding(
                     padding: const EdgeInsets.all(8.0),
                     child: AnimatedBuilder(
-                      animation: bigNetProgress,
+                      animation: netProgress,
                       builder: (_, _) {
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Downloading big NNUE file'),
-                            LinearProgressIndicator(
-                              value: bigNetProgress.value,
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                if (!snapshot.hasData)
-                  Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: AnimatedBuilder(
-                      animation: smallNetProgress,
-                      builder: (_, _) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Downloading small NNUE file'),
-                            LinearProgressIndicator(
-                              value: smallNetProgress.value,
-                            ),
+                            Text('Downloading NNUE file'),
+                            LinearProgressIndicator(value: netProgress.value),
                           ],
                         );
                       },

@@ -1,5 +1,12 @@
 ## 0.6.0
 
+- Update Stockfish to version 19 (the `sf_19` release).
+- **Breaking:** Stockfish 19 evaluates with a single network. The `EvalFileSmall`
+  UCI option is gone, and `EvalFile` now expects the one net
+  (`nn-1a298aa575a0.nnue`) rather than the big half of a pair.
+- Exclude upstream's new `src/universal/` directory from all three build
+  systems. It belongs to the macOS universal-binary build and does not link into
+  a normal one.
 - **Breaking:** the engine no longer redirects the process's `stdin` and
   `stdout` onto its pipe. Each library now reads and writes streams of its own,
   bound straight to its own pipe. Two flavours can therefore be resident at the

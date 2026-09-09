@@ -1,13 +1,17 @@
 # Updating the vendored Stockfish
 
 The engine under `ios/multistockfish_chess/Sources/multistockfish_chess/Stockfish/`
-is a copy of upstream Stockfish, currently version 18. It is **not** pristine: it
-carries a small patch that has to be re-applied whenever the copy is refreshed.
+is a copy of upstream Stockfish, currently the `sf_19` release. It is **not**
+pristine: it carries a small patch that has to be re-applied whenever the copy is
+refreshed.
 
 This document exists so that re-applying it is mechanical. Everything here also
-applies to `multistockfish_sf16` and `multistockfish_variant`, whose engines carry
-the same patch — but those two are pinned to closed versions and are not expected
-to be updated, so this is written for Stockfish.
+applies to `multistockfish_light` and `multistockfish_variant`, whose engines
+carry the same patch. `multistockfish_light` tracks the same upstream version as
+this package and additionally carries the feature-set patch that gives it its
+small net, plus a namespace rename — see that package's own `UPDATING.md`.
+`multistockfish_variant` is pinned to a closed version and is not expected to be
+updated.
 
 ## Why the patch exists
 
@@ -141,8 +145,25 @@ version makes any of them reachable, they need patching.
 | Site | Why it is left alone |
 | --- | --- |
 | `src/main.cpp` | Upstream's command-line entry point. Excluded from the iOS build and never called on Android, where the shim provides the entry point instead. |
+| `src/universal/` | Upstream's macOS universal-binary build. Excluded from all three build systems: the `entry_*.cpp` files call into per-arch `Stockfish_<arch>::main` namespaces a normal build does not have, and `nnue_embed.cpp` defines a second `gEmbeddedNNUEData`. Compiling either fails to link. |
 | `src/tune.cpp` | The `std::cout` there is in `make_option`, reached only from a `TUNE(...)` registration. A stock build has none, so it is dead code. Confirm with `grep -rn 'TUNE(' . --include='*.cpp' --include='*.h'` — it should match only `tune.h`, where the macro itself is defined. |
 | every `std::cerr` | See above. |
+
+## The shim also tracks upstream's entry point
+
+`stockfish_nnue.cpp` reimplements upstream's `src/main.cpp` so that the engine can
+be started from Dart instead of from a command line. It is not covered by the
+patch above, but it *does* break when upstream changes that file — which is
+exactly what the 18 → 19 bump did. Diff the vendored `src/main.cpp` against the
+previous version and mirror any change into the shim's `main()`.
+
+The two changes 19 brought, both compile errors rather than silent ones:
+
+- `Bitboards::init()` became `Attacks::init()`, declared in the new
+  `src/attacks.h`.
+- `UCIEngine` now takes a `CommandLine` instead of `argc`/`argv`. The shim builds
+  it as a named variable, because `UCIEngine uci(CommandLine(argc, argv))` would
+  parse as a function declaration.
 
 ## Verifying the result
 
@@ -153,15 +174,15 @@ From the repository root:
 # flavours, since the shim is identical across them.
 pkgs/multistockfish_variant/test/run_shim_test.sh
 
-# Slow (compiles two engines): links sf16 and Fairy-Stockfish into one binary,
-# the way iOS does, and searches on both at once. This is the test that fails if
-# a flavour is still writing to a shared stream.
+# Slow (compiles two engines): links multistockfish_light and Fairy-Stockfish
+# into one binary, the way iOS does, and searches on both at once. This is the
+# test that fails if a flavour is still writing to a shared stream.
 test/run_two_flavours_test.sh
 ```
 
 Both must print `PASS`. The checks that specifically catch a missed patch site
 are *"the process keeps its own stdout"* and *"the variant's traffic never
-reached sf16's channel"*.
+reached light's channel"*.
 
 A missed `bestmove` tail will not show up as a compile error — it shows up as the
 engine going silent after `go`. If a search never returns a move, that hunk is the

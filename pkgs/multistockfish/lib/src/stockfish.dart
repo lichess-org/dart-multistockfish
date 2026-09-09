@@ -64,16 +64,16 @@ class Stockfish {
   static Map<StockfishFlavor, Stockfish> get debugLiveEngines =>
       Map.unmodifiable(_live);
 
-  /// The default big NNUE file for evaluation of [StockfishFlavor.latestNoNNUE].
-  static const latestBigNNUE = 'nn-c288c895ea92.nnue';
-
-  /// The default small NNUE file for evaluation of [StockfishFlavor.latestNoNNUE].
-  static const latestSmallNNUE = 'nn-37f18f62d772.nnue';
+  /// The default NNUE file for evaluation of [StockfishFlavor.latestNoNNUE].
+  ///
+  /// Stockfish 19 evaluates with a single net, replacing the big/small pair
+  /// that Stockfish 18 used.
+  static const latestNNUE = 'nn-1a298aa575a0.nnue';
 
   /// Starts an engine of [flavor] and completes when it is ready for commands.
   ///
-  /// When [flavor] is [StockfishFlavor.latestNoNNUE], [smallNetPath] and
-  /// [bigNetPath] must be provided.
+  /// When [flavor] is [StockfishFlavor.latestNoNNUE], [nnuePath] must be
+  /// provided.
   ///
   /// Throws a [StateError] if an engine of [flavor] is already live — call
   /// [dispose] on it first — and a [TimeoutException] if the engine does not
@@ -89,26 +89,22 @@ class Stockfish {
   /// line for its whole life.
   static Future<Stockfish> create({
     /// The flavor of Stockfish to use.
-    StockfishFlavor flavor = StockfishFlavor.sf16,
+    StockfishFlavor flavor = StockfishFlavor.light,
 
     /// The variant of chess to use. (Only for [StockfishFlavor.variant]).
     ///
     /// Example: '3check', 'crazyhouse', 'atomic', 'kingofthehill', 'antichess', 'horde', 'racingkings'.
     String? variant,
 
-    /// Full path to the small net file for NNUE evaluation. Only used for [StockfishFlavor.latestNoNNUE].
-    String? smallNetPath,
-
-    /// Full path to the big net file for NNUE evaluation. Only used for [StockfishFlavor.latestNoNNUE].
-    String? bigNetPath,
+    /// Full path to the net file for NNUE evaluation. Only used for [StockfishFlavor.latestNoNNUE].
+    String? nnuePath,
 
     /// Receives every line the engine writes, starting from its first.
     void Function(String line)? onStdout,
   }) async {
     assert(
-      flavor != StockfishFlavor.latestNoNNUE ||
-          (smallNetPath != null && bigNetPath != null),
-      'NNUE evaluation requires smallNetPath and bigNetPath',
+      flavor != StockfishFlavor.latestNoNNUE || nnuePath != null,
+      'NNUE evaluation requires nnuePath',
     );
 
     // Claiming the slot before the first await is what makes two concurrent
@@ -117,8 +113,7 @@ class Stockfish {
     final engine =
         Stockfish._(flavor)
           .._variant = variant
-          .._smallNetPath = smallNetPath
-          .._bigNetPath = bigNetPath;
+          .._nnuePath = nnuePath;
     engine._claimSlot(flavor);
     if (onStdout != null) engine._stdoutController.stream.listen(onStdout);
 
@@ -136,8 +131,7 @@ class Stockfish {
 
   StockfishFlavor _flavor;
   String? _variant;
-  String? _smallNetPath;
-  String? _bigNetPath;
+  String? _nnuePath;
 
   /// The flavor of Stockfish this engine runs.
   StockfishFlavor get flavor => _flavor;
@@ -145,11 +139,8 @@ class Stockfish {
   /// The variant of chess. (Only for [StockfishFlavor.variant]).
   String? get variant => _variant;
 
-  /// Full path to the small net file for NNUE evaluation.
-  String? get smallNetPath => _smallNetPath;
-
-  /// Full path to the big net file for NNUE evaluation.
-  String? get bigNetPath => _bigNetPath;
+  /// Full path to the net file for NNUE evaluation.
+  String? get nnuePath => _nnuePath;
 
   StockfishBindings get _bindings => _getBindings(_flavor);
 
@@ -335,11 +326,8 @@ class Stockfish {
       stdin = 'setoption name UCI_Variant value $_variant';
     }
 
-    if (_flavor == StockfishFlavor.latestNoNNUE &&
-        _bigNetPath != null &&
-        _smallNetPath != null) {
-      stdin = 'setoption name EvalFile value $_bigNetPath';
-      stdin = 'setoption name EvalFileSmall value $_smallNetPath';
+    if (_flavor == StockfishFlavor.latestNoNNUE && _nnuePath != null) {
+      stdin = 'setoption name EvalFile value $_nnuePath';
     }
   }
 
@@ -526,7 +514,7 @@ class Stockfish {
     'state and streams. This singleton will be removed in the next release.',
   )
   static final Stockfish instance = Stockfish._(
-    StockfishFlavor.sf16,
+    StockfishFlavor.light,
     legacy: true,
   );
 
@@ -534,7 +522,7 @@ class Stockfish {
   ///
   /// Returns a [Future] that completes when the engine is ready to accept commands.
   ///
-  /// When [flavor] is [StockfishFlavor.latestNoNNUE], [smallNetPath] and [bigNetPath] must be provided.
+  /// When [flavor] is [StockfishFlavor.latestNoNNUE], [nnuePath] must be provided.
   ///
   /// Throws a [TimeoutException] if the engine does not become ready in time.
   @Deprecated(
@@ -543,18 +531,15 @@ class Stockfish {
   )
   Future<void> start({
     /// The flavor of Stockfish to use.
-    StockfishFlavor flavor = StockfishFlavor.sf16,
+    StockfishFlavor flavor = StockfishFlavor.light,
 
     /// The variant of chess to use. (Only for [StockfishFlavor.variant]).
     ///
     /// Example: '3check', 'crazyhouse', 'atomic', 'kingofthehill', 'antichess', 'horde', 'racingkings'.
     String? variant,
 
-    /// Full path to the small net file for NNUE evaluation. Only used for [StockfishFlavor.latestNoNNUE].
-    String? smallNetPath,
-
-    /// Full path to the big net file for NNUE evaluation. Only used for [StockfishFlavor.latestNoNNUE].
-    String? bigNetPath,
+    /// Full path to the net file for NNUE evaluation. Only used for [StockfishFlavor.latestNoNNUE].
+    String? nnuePath,
   }) {
     assert(
       _legacy,
@@ -562,9 +547,8 @@ class Stockfish {
       'from Stockfish.create() is already started.',
     );
     assert(
-      flavor != StockfishFlavor.latestNoNNUE ||
-          (smallNetPath != null && bigNetPath != null),
-      'NNUE evaluation requires smallNetPath and bigNetPath',
+      flavor != StockfishFlavor.latestNoNNUE || nnuePath != null,
+      'NNUE evaluation requires nnuePath',
     );
 
     if (_pendingStart != null) {
@@ -587,8 +571,7 @@ class Stockfish {
     _claimSlot(flavor);
 
     _variant = variant;
-    _smallNetPath = smallNetPath;
-    _bigNetPath = bigNetPath;
+    _nnuePath = nnuePath;
 
     return _pendingStart = _legacyStart().whenComplete(
       () => _pendingStart = null,
@@ -794,7 +777,7 @@ DynamicLibrary _openDynamicLibrary(String libName) {
 }
 
 StockfishBindings? _latestBindings;
-StockfishBindings? _sf16Bindings;
+StockfishBindings? _lightBindings;
 StockfishBindings? _fairyBindings;
 
 StockfishBindings _getBindings(StockfishFlavor flavor) {
@@ -810,12 +793,12 @@ StockfishBindings _getBindings(StockfishFlavor flavor) {
         _openDynamicLibrary('multistockfish_chess'),
       );
       return _latestBindings!;
-    case StockfishFlavor.sf16:
-      _sf16Bindings ??= StockfishBindingsFFI(
-        _openDynamicLibrary('multistockfish_sf16'),
-        symbolPrefix: 'sf16',
+    case StockfishFlavor.light:
+      _lightBindings ??= StockfishBindingsFFI(
+        _openDynamicLibrary('multistockfish_light'),
+        symbolPrefix: 'light',
       );
-      return _sf16Bindings!;
+      return _lightBindings!;
     case StockfishFlavor.variant:
       _fairyBindings ??= StockfishBindingsFFI(
         _openDynamicLibrary('multistockfish_variant'),

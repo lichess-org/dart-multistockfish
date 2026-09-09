@@ -1,0 +1,23 @@
+name: multistockfish_light
+description: "Stockfish 19 C++ library for chess and chess 960, with a small embedded NNUE."
+version: 0.1.0
+repository: https://github.com/lichess-org/dart-multistockfish.git
+homepage: https://github.com/lichess-org/dart-multistockfish.git
+
+resolution: workspace
+
+environment:
+  sdk: ^3.7.0
+  flutter: '>=3.3.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        ffiPlugin: true
+      ios:
+        ffiPlugin: true

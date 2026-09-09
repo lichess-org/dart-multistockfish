@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# Builds sf16 and Fairy-Stockfish into a single host binary and runs both
-# engines at once, which is what private engine I/O exists to make possible.
+# Builds multistockfish_light and Fairy-Stockfish into a single host binary and
+# runs both engines at once, which is what private engine I/O exists to make
+# possible.
 #
 # It links the two flavours together on purpose: that is how iOS builds them
 # under Swift Package Manager, so this also checks that their symbols do not
@@ -18,25 +19,31 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$here/.."
-sf16="$root/pkgs/multistockfish_sf16/ios/multistockfish_sf16/Sources/multistockfish_sf16"
+light="$root/pkgs/multistockfish_light/ios/multistockfish_light/Sources/multistockfish_light"
 variant="$root/pkgs/multistockfish_variant/ios/multistockfish_variant/Sources/multistockfish_variant"
 
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
-mkdir -p "$out/sf16" "$out/variant"
+mkdir -p "$out/light" "$out/variant"
 
 CXX="${CXX:-clang++}"
 common=(-std=c++17 -O1 -DUSE_PTHREADS -DIS_64BIT -DUSE_POPCNT -DNDEBUG -Wno-writable-strings -c)
 
-# The two flavours need different NNUE flags -- sf16 embeds its network with
+# The two flavours need different NNUE flags -- light embeds its network with
 # .incbin, Fairy-Stockfish is built without one -- so they cannot share a single
 # compiler invocation. Compile each to objects, then link them together.
-echo "Building sf16..."
-for f in "$sf16/stockfish16.cpp" "$sf16/sfio.cpp" \
-         $(find "$sf16/Stockfish16/src" -name '*.cpp' ! -name 'main.cpp'); do
+#
+# src/universal is skipped for the same reason the shipped builds exclude it:
+# those files belong to upstream's macOS universal-binary build and do not link
+# into a normal one.
+echo "Building light..."
+for f in "$light/stockfish_light.cpp" "$light/sfio.cpp" \
+         $(find "$light/StockfishLight/src" -name '*.cpp' ! -name 'main.cpp' \
+             -not -path '*/universal/*'); do
   "$CXX" "${common[@]}" \
-    -I"$sf16" -I"$sf16/Stockfish16/src" -I"$sf16/include/multistockfish_sf16" -I"$sf16/nnue" \
-    -o "$out/sf16/$(echo "${f#$sf16/}" | tr / _).o" "$f"
+    -I"$light" -I"$light/StockfishLight/src" \
+    -I"$light/include/multistockfish_light" -I"$light/nnue" \
+    -o "$out/light/$(echo "${f#$light/}" | tr / _).o" "$f"
 done
 
 echo "Building variant..."
@@ -51,7 +58,7 @@ done
 
 echo "Linking both flavours into one binary..."
 "$CXX" -std=c++17 -O1 -o "$out/two_flavours_test" \
-  "$here/two_flavours_test.cpp" "$out"/sf16/*.o "$out"/variant/*.o
+  "$here/two_flavours_test.cpp" "$out"/light/*.o "$out"/variant/*.o
 
 echo "Running..."
 # stdout is left alone on purpose: one of the things this checks is that the

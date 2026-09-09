@@ -140,7 +140,7 @@ class MockEngineController {
       );
 
   /// The mocked native library of the default flavor.
-  MockStockfishBindings get bindings => bindingsFor(StockfishFlavor.sf16);
+  MockStockfishBindings get bindings => bindingsFor(StockfishFlavor.light);
 
   /// The most recently spawned engine.
   MockEngine get engine => engines.last;
@@ -175,8 +175,8 @@ class MockEngineController {
   /// Simulates the [flavor] engine starting up by writing its version to
   /// stdout and responding to the "uci" command with "uciok".
   Future<void> simulateStartup({
-    StockfishFlavor flavor = StockfishFlavor.sf16,
-    String engineName = 'Stockfish 16',
+    StockfishFlavor flavor = StockfishFlavor.light,
+    String engineName = 'Stockfish 19',
   }) async {
     emitStdout(engineName, flavor: flavor);
 
@@ -258,9 +258,9 @@ Future<T> runWithMockStockfish<T>(
 /// Creates an engine of [flavor] and drives its startup.
 Future<Stockfish> createEngine(
   MockEngineController controller, {
-  StockfishFlavor flavor = StockfishFlavor.sf16,
+  StockfishFlavor flavor = StockfishFlavor.light,
   String? variant,
-  String engineName = 'Stockfish 16',
+  String engineName = 'Stockfish 19',
 }) async {
   final future = Stockfish.create(flavor: flavor, variant: variant);
   await controller.simulateStartup(flavor: flavor, engineName: engineName);
@@ -276,7 +276,7 @@ void main() {
         final engine = await createEngine(controller);
 
         expect(engine.state.value, StockfishState.ready);
-        expect(engine.flavor, StockfishFlavor.sf16);
+        expect(engine.flavor, StockfishFlavor.light);
 
         engine.stdin = 'isready';
         expect(controller.bindings.stdinCalls, contains('isready\n'));
@@ -290,7 +290,7 @@ void main() {
         final engine = await createEngine(controller);
 
         await expectLater(
-          Stockfish.create(flavor: StockfishFlavor.sf16),
+          Stockfish.create(flavor: StockfishFlavor.light),
           throwsStateError,
         );
 
@@ -309,10 +309,10 @@ void main() {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
-        final first = Stockfish.create(flavor: StockfishFlavor.sf16);
+        final first = Stockfish.create(flavor: StockfishFlavor.light);
 
         await expectLater(
-          Stockfish.create(flavor: StockfishFlavor.sf16),
+          Stockfish.create(flavor: StockfishFlavor.light),
           throwsStateError,
           reason:
               'the slot is claimed before the engine is spawned, so two '
@@ -351,7 +351,7 @@ void main() {
 
         controller.emitStdout(
           'info depth 20 score cp 31',
-          flavor: StockfishFlavor.sf16,
+          flavor: StockfishFlavor.light,
         );
         controller.emitStdout('bestmove e2e4', flavor: StockfishFlavor.variant);
         await Future.delayed(Duration.zero);
@@ -360,11 +360,11 @@ void main() {
         expect(analysisLines, ['info depth 20 score cp 31']);
         expect(opponentLines, ['bestmove e2e4']);
         expect(
-          controller.bindingsFor(StockfishFlavor.sf16).stdinCalls,
+          controller.bindingsFor(StockfishFlavor.light).stdinCalls,
           contains('go depth 20\n'),
         );
         expect(
-          controller.bindingsFor(StockfishFlavor.sf16).stdinCalls,
+          controller.bindingsFor(StockfishFlavor.light).stdinCalls,
           isNot(contains('go movetime 500\n')),
         );
         expect(
@@ -563,33 +563,33 @@ void main() {
       });
     });
 
-    test('sends NNUE paths for latestNoNNUE flavor', () async {
+    test('sends the NNUE path for latestNoNNUE flavor', () async {
       final controller = MockEngineController();
 
       await runWithMockStockfish(controller, () async {
         final future = Stockfish.create(
           flavor: StockfishFlavor.latestNoNNUE,
-          bigNetPath: '/path/to/big.nnue',
-          smallNetPath: '/path/to/small.nnue',
+          nnuePath: '/path/to/net.nnue',
         );
         await controller.simulateStartup(
           flavor: StockfishFlavor.latestNoNNUE,
-          engineName: 'Stockfish 18',
+          engineName: 'Stockfish 19',
         );
         final engine = await future;
 
-        expect(engine.bigNetPath, '/path/to/big.nnue');
-        expect(engine.smallNetPath, '/path/to/small.nnue');
+        expect(engine.nnuePath, '/path/to/net.nnue');
 
         final calls =
             controller.bindingsFor(StockfishFlavor.latestNoNNUE).stdinCalls;
         expect(
           calls,
-          contains('setoption name EvalFile value /path/to/big.nnue\n'),
+          contains('setoption name EvalFile value /path/to/net.nnue\n'),
         );
+        // Stockfish 19 evaluates with a single net, so there is no second
+        // `EvalFileSmall` to set.
         expect(
-          calls,
-          contains('setoption name EvalFileSmall value /path/to/small.nnue\n'),
+          calls.where((c) => c.contains('EvalFileSmall')),
+          isEmpty,
         );
       });
     });
@@ -971,7 +971,7 @@ void main() {
           engine.stdout.listen(fromStdout.add);
           await Future.delayed(Duration.zero);
 
-          expect(fromCreate, ['Stockfish 16', 'uciok']);
+          expect(fromCreate, ['Stockfish 19', 'uciok']);
           expect(fromStdout, isEmpty);
 
           // It keeps receiving for the engine's whole life, though.
@@ -1191,7 +1191,7 @@ void main() {
       await runWithMockStockfish(controller, () async {
         expect(Stockfish.instance, same(Stockfish.instance));
         expect(Stockfish.instance.state.value, StockfishState.initial);
-        expect(Stockfish.instance.flavor, StockfishFlavor.sf16);
+        expect(Stockfish.instance.flavor, StockfishFlavor.light);
       });
     });
 
