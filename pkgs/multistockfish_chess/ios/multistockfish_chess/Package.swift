@@ -45,6 +45,11 @@ let package = Package(
                 "Stockfish/src/Makefile",
                 "Stockfish/src/main.cpp",
                 "Stockfish/src/incbin/UNLICENCE",
+                // Upstream's macOS universal-binary build only. The entry_* files
+                // call into per-arch `Stockfish_<arch>::main` namespaces that a
+                // normal build does not have, and nnue_embed.cpp defines a second
+                // `gEmbeddedNNUEData`.
+                "Stockfish/src/universal",
                 "Stockfish/AUTHORS",
                 "Stockfish/CITATION.cff",
                 "Stockfish/CONTRIBUTING.md",

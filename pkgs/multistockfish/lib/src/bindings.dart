@@ -1,8 +1,30 @@
+import 'dart:convert';
 import 'dart:ffi' as ffi;
 import 'package:ffi/ffi.dart';
 import 'package:logging/logging.dart';
 
 final _logger = Logger('Stockfish');
+
+/// Decodes a NUL-terminated chunk of engine output.
+///
+/// Deliberately not `Utf8Pointer.toDartString()`, which is
+/// `utf8.decode(..., allowMalformed: false)` and therefore *throws* on a partial
+/// sequence. A chunk is a slice of a byte stream, so a multi-byte character can
+/// straddle two of them — and that throw would land in the reader isolate's loop,
+/// uncaught, killing the only thing draining the engine's pipe. The engine then
+/// blocks writing into a full pipe, stops reading commands, misses its quit, and
+/// keeps its native slot for the rest of the process's life.
+///
+/// A replacement character on one line of engine output is a far better outcome,
+/// and it makes the reader proof against malformed bytes from an engine that is
+/// already misbehaving, not only against split ones.
+String decodeEngineChunk(ffi.Pointer<ffi.Uint8> bytes) {
+  var length = 0;
+  while (bytes[length] != 0) {
+    length++;
+  }
+  return utf8.decode(bytes.asTypedList(length), allowMalformed: true);
+}
 
 /// Abstract interface for Stockfish native bindings.
 abstract class StockfishBindings {
@@ -48,14 +70,14 @@ abstract class StockfishBindings {
 /// FFI implementation of [StockfishBindings].
 ///
 /// Every native package built by this plugin (`multistockfish_chess`,
-/// `multistockfish_sf16`, `multistockfish_variant`) exports its own copy of the
+/// `multistockfish_light`, `multistockfish_variant`) exports its own copy of the
 /// same four `stockfish_*` C functions. On platforms where several of these
 /// native libraries can end up resolving symbols from the same process-wide
 /// namespace (notably iOS, where a Swift Package Manager-built plugin is
 /// statically linked into the app binary instead of loaded from its own
 /// framework), identically-named exports would collide. [symbolPrefix] lets
 /// each flavor other than the default look up its own uniquely-named symbols
-/// (e.g. `stockfish_sf16_init`) to avoid that collision.
+/// (e.g. `stockfish_light_init`) to avoid that collision.
 class StockfishBindingsFFI implements StockfishBindings {
   /// The symbols are looked up in [dynamicLibrary], using names prefixed by
   /// `stockfish_<symbolPrefix>_` (or just `stockfish_` when [symbolPrefix] is
@@ -99,7 +121,8 @@ class StockfishBindingsFFI implements StockfishBindings {
       _logger.fine('nativeStdoutRead returns NULL');
       return null;
     }
-    return pointer.toDartString();
+
+    return decodeEngineChunk(pointer.cast<ffi.Uint8>());
   }
 
   @override

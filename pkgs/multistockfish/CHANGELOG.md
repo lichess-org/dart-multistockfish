@@ -1,10 +1,81 @@
 ## 0.6.0
 
+**Breaking changes — Stockfish 19:**
+
+- Update to Stockfish 19 for both non-variant flavours.
+- `StockfishFlavor.sf16` is removed and replaced by `StockfishFlavor.light`:
+  Stockfish 19 with a ~1MB embedded net, in place of Stockfish 16 with a 38MB
+  one. It is the new default for `Stockfish.create()`. The
+  `multistockfish_sf16` package is retired in favour of `multistockfish_light`.
+- `bigNetPath` and `smallNetPath` are replaced by a single `nnuePath`, and
+  `Stockfish.latestBigNNUE`/`latestSmallNNUE` by `Stockfish.latestNNUE`.
+  Stockfish 19 evaluates with one network, so `StockfishFlavor.latestNoNNUE`
+  now needs one file instead of two.
+
+**Breaking changes — per-flavour engine handles:**
+
+An engine is now a handle you create and dispose, rather than a process-wide
+singleton you start and quit. **The handle is the flavour**: at most one engine
+per `StockfishFlavor` can be live at a time, and engines of *different* flavours
+are independent and can run side by side — each with its own `stdin`, `stdout`,
+`state` and `diagnostics`. Running an NNUE engine for analysis while
+Fairy-Stockfish plays an opponent no longer means restarting one to get the
+other.
+
+- Add `Stockfish.create()`, which starts an engine of one flavour and completes
+  when it is ready for commands, and `dispose()`, which quits it and frees the
+  flavour's slot. `create()` throws a `StateError` while another engine of the
+  same flavour holds the slot.
+- An engine that ends — disposed, quit over `stdin`, or crashed — releases its
+  flavour's slot without waiting to be disposed, because the native library is
+  provably free once its `main()` has returned.
+- A handle is single use. `state` ends as the new `StockfishState.disposed` —
+  after `dispose()`, or after the engine exits cleanly on its own, as it does
+  when sent `quit` over `stdin` — or as `StockfishState.error` if it died badly.
+  Neither is recoverable on that handle. `stdout` closes when the engine ends,
+  so it no longer persists across a restart — the replacement engine has its own.
+- Add an `onStdout` parameter to `create()`. `create()` only completes once the
+  engine is ready, so a listener attached to `stdout` afterwards has already
+  missed the banner and the UCI handshake; `onStdout` is attached before the
+  engine is spawned and receives every line for its whole life.
+- `dispose()` gives up on an engine that will not exit within 5 seconds instead
+  of waiting for it forever, and frees the slot regardless.
+- `create()` now fails as soon as the engine exits during startup — a start the
+  native library refused is reported in milliseconds with the exit code, rather
+  than as a timeout five seconds later.
+- `Stockfish.instance`, `start()` and `quit()` still work but are deprecated and
+  will be removed in the next release. The singleton competes for the same
+  per-flavour slots as `create()`, so the two APIs can be mixed during a
+  migration without ending up with two engines of one flavour.
+
+**Migration:**
+
+```dart
+// Before
+final stockfish = Stockfish.instance;
+await stockfish.start(flavor: StockfishFlavor.variant, variant: 'atomic');
+stockfish.stdin = 'go movetime 1000';
+await stockfish.quit();
+
+// After
+final stockfish = await Stockfish.create(
+  flavor: StockfishFlavor.variant,
+  variant: 'atomic',
+);
+stockfish.stdin = 'go movetime 1000';
+await stockfish.dispose();
+```
+
 - Add Swift Package Manager support for iOS.
 
 **Engine lifecycle fixes** (in the native packages, via the bumped constraints
 below):
 
+- The engine no longer takes the process's `stdin` and `stdout` over. Each
+  native library now reads and writes streams of its own, bound directly to its
+  pipe, so anything the app writes to `stdout` still goes where it should while
+  an engine is running — and two flavours can be resident at once, which
+  per-flavour engine handles will build on.
 - Restarting after an engine failed to quit no longer corrupts memory. Nothing
   previously stopped a second engine from running over the first one's
   process-global state while it was still tearing its thread pool down; that is
@@ -36,8 +107,8 @@ below):
   instead of piling onto a session the engine can no longer read correctly; a
   write that simply was not delivered leaves the engine usable.
 
-Requires `multistockfish_chess` ^0.5.0, `multistockfish_sf16` ^0.3.0 and
-`multistockfish_variant` ^0.3.0.
+Requires `multistockfish_chess` ^0.6.0, `multistockfish_light` ^0.1.0 and
+`multistockfish_variant` ^0.4.0.
 
 ## 0.5.0
 

@@ -5,13 +5,21 @@ cmake_minimum_required(VERSION 3.10)
 
 project(multistockfish_chess_library VERSION 0.2.0 LANGUAGES CXX)
 
-file(GLOB_RECURSE sf17Paths "../ios/multistockfish_chess/Sources/multistockfish_chess/Stockfish/src/*.cpp")
+file(GLOB_RECURSE sfPaths "../ios/multistockfish_chess/Sources/multistockfish_chess/Stockfish/src/*.cpp")
+
+# src/universal/ holds the entry points and the NNUE embedding used by upstream's
+# macOS universal-binary build. They are not part of a normal build: the entry_*
+# files call into per-arch `Stockfish_<arch>::main` namespaces that only exist in
+# that build, and nnue_embed.cpp defines a second `gEmbeddedNNUEData`. Compiling
+# either here fails to link.
+list(FILTER sfPaths EXCLUDE REGEX "/Stockfish/src/universal/")
 
 add_library(
   multistockfish_chess
   SHARED
   ../ios/multistockfish_chess/Sources/multistockfish_chess/stockfish_nnue.cpp
-  ${sf17Paths}
+  ../ios/multistockfish_chess/Sources/multistockfish_chess/sfio.cpp
+  ${sfPaths}
 )
 
 set_target_properties(multistockfish_chess PROPERTIES

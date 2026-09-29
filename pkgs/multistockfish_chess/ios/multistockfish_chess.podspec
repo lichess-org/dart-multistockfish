@@ -24,6 +24,10 @@ Pod::Spec.new do |s|
     'multistockfish_chess/Sources/multistockfish_chess/Stockfish/src/Makefile',
     'multistockfish_chess/Sources/multistockfish_chess/Stockfish/src/main.cpp',
     'multistockfish_chess/Sources/multistockfish_chess/Stockfish/src/incbin/UNLICENCE',
+    # Upstream's macOS universal-binary build only. The entry_* files call into
+    # per-arch `Stockfish_<arch>::main` namespaces that a normal build does not
+    # have, and nnue_embed.cpp defines a second `gEmbeddedNNUEData`.
+    'multistockfish_chess/Sources/multistockfish_chess/Stockfish/src/universal/**/*',
   ]
   s.dependency 'Flutter'
   s.platform = :ios, '12.0'

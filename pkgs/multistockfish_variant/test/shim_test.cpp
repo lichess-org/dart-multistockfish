@@ -1,16 +1,19 @@
 // Host integration test for the multistockfish native shim (variant flavour).
 //
-// Exercises exactly the P1 hardening: the re-entry guard, pipe reuse across a
-// restart, no descriptor leak, and the non-blocking stdin write.
+// Exercises the P1 hardening -- the re-entry guard, pipe reuse across a restart,
+// no descriptor leak, and the non-blocking stdin write -- and the P2 guarantee
+// that the engine talks to its own pipe rather than to the process's standard
+// descriptors.
 //
-// All diagnostics go to stderr, because stockfish_variant_main() dup2s the
-// engine's pipe onto the process's stdout.
+// Diagnostics go to stderr, which leaves this process's stdout free to be checked
+// for exactly the interference the engine no longer causes.
 
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -89,6 +92,29 @@ static const char *last_error()
   return stockfish_variant_last_error(buffer, sizeof(buffer)) > 0 ? buffer : nullptr;
 }
 
+// Identifies whatever a descriptor is currently open on. A dup2 onto it changes
+// both halves, so comparing this across an engine run is a direct test of whether
+// the process still owns its own standard descriptors.
+struct FdIdentity
+{
+  dev_t dev;
+  ino_t ino;
+  bool  valid;
+};
+
+static FdIdentity fd_identity(int fd)
+{
+  struct stat st;
+  if (fstat(fd, &st) != 0)
+    return FdIdentity{0, 0, false};
+  return FdIdentity{st.st_dev, st.st_ino, true};
+}
+
+static bool same_fd(const FdIdentity &a, const FdIdentity &b)
+{
+  return a.valid && b.valid && a.dev == b.dev && a.ino == b.ino;
+}
+
 static int open_fd_count()
 {
   int count = 0;
@@ -125,6 +151,11 @@ static void run_engine_session(const char *label, int *exit_code)
 int main()
 {
   const int fds_at_start = open_fd_count();
+
+  // Captured before any engine runs, so that the checks below can tell whether
+  // the engine took the process's descriptors over.
+  const FdIdentity stdin_at_start  = fd_identity(STDIN_FILENO);
+  const FdIdentity stdout_at_start = fd_identity(STDOUT_FILENO);
 
   fprintf(stderr, "\n-- init --\n");
   check(stockfish_variant_init() == 0, "init succeeds");
@@ -170,6 +201,64 @@ int main()
   fprintf(stderr, "  ..  start=%d after 1st=%d after 2nd=%d\n", fds_at_start,
           fds_after_first, fds_after_second);
   check(fds_after_second == fds_after_first, "a restart leaks no descriptors");
+
+  // --- the engine's I/O is its own, not the process's ----------------------
+  //
+  // Two engine sessions have now booted, run and exited. Before P2 each of them
+  // dup2'd its pipe onto fd 0 and fd 1, which meant a second flavour could not
+  // have a channel of its own and anything the host wrote to stdout vanished
+  // into the engine's output pipe.
+  fprintf(stderr, "\n-- private engine I/O --\n");
+
+  check(same_fd(fd_identity(STDIN_FILENO), stdin_at_start),
+        "the process keeps its own stdin");
+  check(same_fd(fd_identity(STDOUT_FILENO), stdout_at_start),
+        "the process keeps its own stdout");
+
+  // --- the quit marker arrives glued to the output before it ---------------
+  //
+  // A page-sized read usually picks the marker up in the same call as the output
+  // written before it, so recognising it has to be a suffix match rather than a
+  // whole-buffer one. A reader that misses it loops forever on an engine that
+  // has exited, and then takes the pipe from the engine that replaces it.
+  // Nothing reads this session until after the engine is gone, which is what
+  // puts the output and the marker in one read.
+  fprintf(stderr, "\n-- quit marker after buffered output --\n");
+  check(stockfish_variant_init() == 0, "init succeeds for the buffered session");
+  {
+    int code = -99;
+    std::thread engine([&code] { code = stockfish_variant_main(); });
+
+    // No reader thread, so the phase is the only way to tell the engine is up.
+    for (int waited = 0;
+         waited < 15000 && stockfish_variant_phase() != SF_PHASE_UCI_LOOP;
+         waited += 10)
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    check(stockfish_variant_phase() == SF_PHASE_UCI_LOOP, "the engine reached its loop");
+
+    // The banner, the handshake and the marker all pile up in the pipe together.
+    check(send("uci\n") > 0, "uci accepted");
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    check(send("quit\n") > 0, "quit accepted");
+    engine.join();
+    check(code == 0, "engine exits with 0");
+
+    std::string collected;
+    while (true)
+    {
+      char *chunk = stockfish_variant_stdout_read();
+      if (chunk == nullptr)
+        break;
+      collected += chunk;
+    }
+
+    check(collected.find("Fairy-Stockfish") != std::string::npos,
+          "the banner buffered before the marker is still delivered");
+    check(collected.find("uciok") != std::string::npos,
+          "so is the handshake that shared the marker's read");
+    check(collected.find("quitok") == std::string::npos,
+          "and the marker itself is not delivered as output");
+  }
 
   // --- the input pipe fills instead of blocking forever --------------------
   fprintf(stderr, "\n-- non-blocking write --\n");

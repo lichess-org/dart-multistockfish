@@ -9,7 +9,9 @@
 #include <mutex>
 #include <stdio.h>
 #include <unistd.h>
+#include <utility>
 
+#include "Stockfish/src/attacks.h"
 #include "Stockfish/src/bitboard.h"
 #include "Stockfish/src/misc.h"
 #include "Stockfish/src/position.h"
@@ -17,6 +19,7 @@
 #include "Stockfish/src/uci.h"
 #include "Stockfish/src/tune.h"
 
+#include "sfio.h"
 #include "./include/multistockfish_chess/stockfish_nnue.h"
 
 // https://jineshkj.wordpress.com/2006/12/22/how-to-capture-stdin-stdout-and-stderr-of-child-program/
@@ -32,7 +35,25 @@
 
 static const char *QUITOK = "quitok\n";
 static int pipes[NUM_PIPES][2] = {{-1, -1}, {-1, -1}};
-static char buffer[80];
+// A page at a time, matching the buffer the engine's output stream flushes from.
+static char buffer[4096];
+
+// An unfinished tail held back from the previous read, because it might turn out
+// to be the start of the quit marker.
+static char carry[8];
+static size_t carry_length = 0;
+
+// Whether the quit marker has been seen. The output that preceded it in the same
+// read is handed over first, so the reader gets the engine's last words before it
+// is told to stop.
+static bool quit_seen = false;
+
+// None of the three is atomic, because stdout_read() has exactly one caller: the
+// reader the Dart side runs for the engine it started. They carry state between
+// calls, so a second concurrent reader would splice one read's tail onto
+// another's and could be handed the end-of-output signal meant for the first.
+// init() resets them for the same reason it drains the pipes: it is the one
+// point where no reader can be running.
 
 // ---------------------------------------------------------------------------
 // Diagnostics
@@ -59,7 +80,8 @@ static std::atomic<long long> g_phase_since_ms{0};
 static std::atomic<bool> g_running{false};
 
 // Whether the pipes have been created. They are created once and reused, so a
-// restart neither leaks descriptors nor invalidates the ones dup2() copied.
+// restart neither leaks descriptors nor invalidates the ones the engine's
+// streams are bound to.
 static std::atomic<bool> g_pipes_ready{false};
 
 static std::mutex g_error_mutex;
@@ -93,13 +115,13 @@ static void set_error(const char *format, ...)
   va_end(args);
 }
 
-// Writes the quit marker straight to the pipe rather than through std::cout, so
-// that it still reaches the reader on paths where the redirection never
-// happened. Flushes std::cout first to preserve ordering on the paths where it
-// did.
+// Writes the quit marker straight to the pipe rather than through the engine's
+// output stream, so that it still reaches the reader on paths where that stream
+// was never bound. Flushes the stream first to preserve ordering on the paths
+// where it was.
 static void signal_quit()
 {
-  std::cout << std::flush;
+  Stockfish::sfio::out() << std::flush;
   if (g_pipes_ready.load(std::memory_order_acquire))
   {
     ssize_t ignored = write(CHILD_WRITE_FD, QUITOK, strlen(QUITOK));
@@ -169,16 +191,22 @@ namespace StockfishLatest {
 
   int main(int argc, char* argv[]) {
 
-    std::cout << engine_info() << std::endl;
+    sfio::out() << engine_info() << std::endl;
 
     set_step("bitboards");
-    Bitboards::init();
+    // Stockfish 19 moved the attack-table initialisation out of Bitboards into
+    // its own Attacks namespace; it is still the same one-time table build.
+    Attacks::init();
     set_step("position");
     Position::init();
 
     {
       set_step("uci_engine");
-      UCIEngine uci(argc, argv);
+      // Stockfish 19's UCIEngine takes a CommandLine rather than argc/argv.
+      // Built as a named variable because `UCIEngine uci(CommandLine(argc,
+      // argv))` would parse as a function declaration.
+      auto cli = CommandLine(argc, argv);
+      UCIEngine uci(std::move(cli));
 
       set_step("tune");
       Tune::init(uci.engine_options());
@@ -209,13 +237,19 @@ int stockfish_init()
     return SF_INIT_ALREADY_RUNNING;
   }
 
+  // A reader that was killed rather than allowed to finish leaves its carry and
+  // its end-of-output flag behind. Left set, the flag would tell the *next*
+  // engine's reader to stop before it had read a byte.
+  carry_length = 0;
+  quit_seen = false;
+
   if (g_pipes_ready.load(std::memory_order_acquire))
   {
     // Reuse the existing pipes rather than creating a second pair, which is
     // what this used to do on every start: the previous parent-side
     // descriptors were simply overwritten in the array, leaking two per
     // restart. Reusing them also keeps one stable channel for the lifetime of
-    // the process, so the descriptors dup2() copied onto fd 0 and fd 1 always
+    // the process, so the descriptors the engine's streams are bound to always
     // refer to the pipe this library is actually reading and writing.
     drain_pipes();
     set_phase(SF_PHASE_INITIALIZED, "pipes_reused");
@@ -281,20 +315,25 @@ int stockfish_main()
     return SF_MAIN_ALREADY_RUNNING;
   }
 
-  set_phase(SF_PHASE_REDIRECTING, "dup2");
+  set_phase(SF_PHASE_REDIRECTING, "bind_streams");
 
-  if (dup2(CHILD_READ_FD, STDIN_FILENO) < 0 || dup2(CHILD_WRITE_FD, STDOUT_FILENO) < 0)
+  // The engine reads and writes streams this library owns, so this points them
+  // at its own end of the pipe. It replaces a dup2 onto fd 0 and fd 1, which
+  // took over the whole process's standard descriptors: only one flavour could
+  // hold them at a time, and the host application lost its own stdout for as
+  // long as an engine was running.
+  if (!Stockfish::sfio::bind(CHILD_READ_FD, CHILD_WRITE_FD))
   {
-    set_error("main: dup2 onto the standard descriptors failed: %s", strerror(errno));
-    set_phase(SF_PHASE_FAILED, "dup2_failed");
+    set_error("main: could not bind the engine's streams to the pipe descriptors");
+    set_phase(SF_PHASE_FAILED, "bind_failed");
     signal_quit();
     g_running.store(false, std::memory_order_release);
     return SF_MAIN_DUP2_FAILED;
   }
 
-  // The child-side descriptors are deliberately left open: dup2 copied them
-  // onto fd 0 and fd 1, and keeping the originals means a later restart can
-  // redirect again without recreating the pipes.
+  // The child-side descriptors stay open for the lifetime of the process: the
+  // streams bound above write and read them directly, and keeping them means a
+  // later restart can rebind without recreating the pipes.
 
   set_phase(SF_PHASE_ENGINE_BOOTING, "engine_boot");
 
@@ -388,6 +427,27 @@ ssize_t stockfish_stdin_write(char *data)
   return (ssize_t)written;
 }
 
+// The length of the longest suffix of [data] that is a proper prefix of QUITOK.
+//
+// The marker is the last thing an engine writes, but a read can return it glued
+// to the output before it, and -- if the pipe happened to be full -- split across
+// two reads. Holding such a tail back is safe: every line the engine writes ends
+// in '\n', which no prefix of the marker does, so an unfinished tail always has
+// more data coming after it.
+static size_t partial_quit_length(const char *data, size_t length)
+{
+  const size_t marker = strlen(QUITOK);
+  size_t candidate = (marker - 1 < length) ? marker - 1 : length;
+
+  for (; candidate > 0; candidate--)
+  {
+    if (memcmp(data + length - candidate, QUITOK, candidate) == 0)
+      return candidate;
+  }
+
+  return 0;
+}
+
 char *stockfish_stdout_read()
 {
   if (!g_pipes_ready.load(std::memory_order_acquire))
@@ -396,28 +456,72 @@ char *stockfish_stdout_read()
     return NULL;
   }
 
-  ssize_t count = read(PARENT_READ_FD, buffer, sizeof(buffer) - 1);
-
-  if (count < 0)
+  // The marker was found last time and everything before it has been delivered.
+  // The engine is gone; tell the reader to stop.
+  if (quit_seen)
   {
-    set_error("stdout_read: read failed: %s", strerror(errno));
+    quit_seen = false;
+    carry_length = 0;
     return NULL;
   }
 
-  // End of file. Returning the empty buffer here would spin the reader.
-  if (count == 0)
-  {
-    set_error("stdout_read: the output pipe reached end of file");
-    return NULL;
-  }
+  const size_t marker = strlen(QUITOK);
 
-  buffer[count] = 0;
-  if (strcmp(buffer, QUITOK) == 0)
+  for (;;)
   {
-    return NULL;
-  }
+    memcpy(buffer, carry, carry_length);
 
-  return buffer;
+    const ssize_t count = read(PARENT_READ_FD, buffer + carry_length, sizeof(buffer) - 1 - carry_length);
+
+    if (count < 0)
+    {
+      set_error("stdout_read: read failed: %s", strerror(errno));
+      carry_length = 0;
+      return NULL;
+    }
+
+    // End of file. Returning the empty buffer here would spin the reader.
+    if (count == 0)
+    {
+      set_error("stdout_read: the output pipe reached end of file");
+      carry_length = 0;
+      return NULL;
+    }
+
+    size_t total = carry_length + (size_t)count;
+    carry_length = 0;
+    buffer[total] = 0;
+
+    // The marker is written on its own once the engine's output has been
+    // flushed, so it is always last -- but this read may have picked up output
+    // written before it.
+    if (total >= marker && memcmp(buffer + total - marker, QUITOK, marker) == 0)
+    {
+      total -= marker;
+      buffer[total] = 0;
+      if (total == 0)
+        return NULL;
+
+      quit_seen = true;
+      return buffer;
+    }
+
+    const size_t partial = partial_quit_length(buffer, total);
+    if (partial > 0)
+    {
+      memcpy(carry, buffer + total - partial, partial);
+      carry_length = partial;
+      total -= partial;
+      buffer[total] = 0;
+    }
+
+    // The whole read was an unfinished tail. Wait for the rest of it rather than
+    // handing the reader an empty string.
+    if (total == 0)
+      continue;
+
+    return buffer;
+  }
 }
 
 int stockfish_phase()

@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 A Flutter plugin providing multiple flavors of the Stockfish chess engine for Android and iOS:
-- **sf16**: Stockfish 16 with embedded NNUE (38MB)
-- **latestNoNNUE**: Stockfish 18 without embedded NNUE (requires downloading .nnue files)
+- **light**: Stockfish 19 with a small embedded NNUE (~1MB)
+- **latestNoNNUE**: Stockfish 19 without embedded NNUE (requires downloading the .nnue file)
 - **variant**: Fairy-Stockfish for chess variants (3check, crazyhouse, atomic, etc.)
 
 ## Development Commands
@@ -31,8 +31,8 @@ This is a Dart workspace monorepo with the following structure:
 
 ### Package Structure
 - **pkgs/multistockfish**: Main Flutter plugin with Dart bindings and public API
-- **pkgs/multistockfish_chess**: Native C++ library for Stockfish 18 (no embedded NNUE)
-- **pkgs/multistockfish_sf16**: Native C++ library for Stockfish 16 (embedded NNUE)
+- **pkgs/multistockfish_chess**: Native C++ library for Stockfish 19 (no embedded NNUE)
+- **pkgs/multistockfish_light**: Native C++ library for Stockfish 19 (small embedded NNUE)
 - **pkgs/multistockfish_variant**: Native C++ library for Fairy-Stockfish (variants)
 
 ### Key Files in pkgs/multistockfish/lib/
@@ -53,7 +53,7 @@ The engine runs in separate isolates:
 - `start()` throws `StateError` if engine is already running - call `quit()` first
 - After `quit()`, state returns to `initial` and engine can be restarted
 - The `stdout` stream persists across restarts - listeners don't need to re-subscribe
-- For `latestNoNNUE` flavor, NNUE files must be downloaded and paths provided to `start()`
+- For `latestNoNNUE` flavor, the NNUE file must be downloaded and its path provided as `nnuePath`
 
 ### Native Plugin Build
 Each native package uses CMakeLists.txt (Android) and podspec (iOS) to build the Stockfish C++ source. The ios/ directories contain the full Stockfish source code.

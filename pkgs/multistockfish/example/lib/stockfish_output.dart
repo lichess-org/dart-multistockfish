@@ -1,70 +1,49 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
-class OutputWidget extends StatefulWidget {
-  final Stream<String> stdout;
+/// The engine console: an append-only log that outlives the engines writing to
+/// it.
+///
+/// Deliberately not a [Stream]. A broadcast stream drops whatever is in flight
+/// when a listener goes away, and it drops everything while there is no
+/// listener at all, so a console built on one loses lines to widget rebuilds
+/// and to the gap before the first `listen`. Appending to a list cannot.
+class ConsoleLog extends ChangeNotifier {
+  final List<String> _lines = [];
 
-  const OutputWidget(this.stdout, {super.key});
+  /// The lines received so far, newest first.
+  List<String> get lines => List.unmodifiable(_lines);
 
-  @override
-  State<StatefulWidget> createState() => _OutputState();
+  void add(String line) {
+    _lines.insert(0, line);
+    notifyListeners();
+  }
+
+  void clear() {
+    _lines.clear();
+    notifyListeners();
+  }
 }
 
-class _OutputState extends State<OutputWidget> {
-  final items = <_OutputItem>[];
+class OutputWidget extends StatelessWidget {
+  final ConsoleLog log;
 
-  late StreamSubscription subscription;
-
-  @override
-  void initState() {
-    super.initState();
-    _subscribe();
-  }
-
-  @override
-  void didUpdateWidget(OutputWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.stdout != oldWidget.stdout) {
-      subscription.cancel();
-      _subscribe();
-    }
-  }
-
-  @override
-  void dispose() {
-    subscription.cancel();
-    super.dispose();
-  }
+  const OutputWidget(this.log, {super.key});
 
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(itemBuilder: _buildItem, itemCount: items.length);
+    return ListenableBuilder(
+      listenable: log,
+      builder: (context, _) {
+        final lines = log.lines;
+        return ListView.builder(
+          itemCount: lines.length,
+          itemBuilder:
+              (context, index) => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                child: Text(lines[index]),
+              ),
+        );
+      },
+    );
   }
-
-  void _subscribe() {
-    subscription = widget.stdout.listen((line) {
-      items.insert(0, _OutputItem.line(line));
-      setState(() {});
-    });
-  }
-
-  Widget _buildItem(BuildContext context, int index) {
-    final item = items[index];
-    final line = item.line;
-    if (line != null) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-        child: Text(line),
-      );
-    }
-
-    return const SizedBox.shrink();
-  }
-}
-
-class _OutputItem {
-  final String? line;
-
-  _OutputItem.line(this.line);
 }

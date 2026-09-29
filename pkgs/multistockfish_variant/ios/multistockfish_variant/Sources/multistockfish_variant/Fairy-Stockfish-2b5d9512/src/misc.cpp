@@ -69,9 +69,9 @@ namespace {
 /// DD-MM-YY and show in engine_info.
 const string Version = "";
 
-/// Our fancy logging facility. The trick here is to replace cin.rdbuf() and
-/// cout.rdbuf() with two Tie objects that tie cin and cout to a file stream. We
-/// can toggle the logging of std::cout and std:cin at runtime whilst preserving
+/// Our fancy logging facility. The trick here is to replace the rdbuf() of the
+/// engine's own input and output streams with two Tie objects that tie them to a
+/// file stream. We can toggle the logging at runtime whilst preserving
 /// usual I/O functionality, all without changing a single line of code!
 /// Idea from http://groups.google.com/group/comp.lang.c++/msg/1d941c0f26ea0d81
 
@@ -99,7 +99,7 @@ struct Tie: public streambuf { // MSVC requires split streambuf for cin and cout
 
 class Logger {
 
-  Logger() : in(cin.rdbuf(), file.rdbuf()), out(cout.rdbuf(), file.rdbuf()) {}
+  Logger() : in(sfio::in().rdbuf(), file.rdbuf()), out(sfio::out().rdbuf(), file.rdbuf()) {}
  ~Logger() { start(""); }
 
   ofstream file;
@@ -120,13 +120,13 @@ public:
             exit(EXIT_FAILURE);
         }
 
-        cin.rdbuf(&l.in);
-        cout.rdbuf(&l.out);
+        sfio::in().rdbuf(&l.in);
+        sfio::out().rdbuf(&l.out);
     }
     else if (fname.empty() && l.file.is_open())
     {
-        cout.rdbuf(l.out.buf);
-        cin.rdbuf(l.in.buf);
+        sfio::out().rdbuf(l.out.buf);
+        sfio::in().rdbuf(l.in.buf);
         l.file.close();
     }
   }

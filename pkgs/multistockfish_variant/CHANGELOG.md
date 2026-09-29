@@ -1,3 +1,14 @@
+## 0.4.0
+
+- **Breaking:** the engine no longer redirects the process's `stdin` and
+  `stdout` onto its pipe. Each library now reads and writes streams of its own,
+  bound straight to its own pipe. Two flavours can therefore be resident at the
+  same time without their output landing in one channel, and the host
+  application keeps its own `stdout` while an engine is running.
+- `SF_MAIN_DUP2_FAILED` is now reported when the engine's input and output cannot
+  be attached to its pipes. Every constant keeps its name and its value; only the
+  mechanism behind that failure changed.
+
 ## 0.3.1
 
 - Fix `Failed to lookup symbol 'stockfish_variant_init'` on iOS in archived (Release/TestFlight/

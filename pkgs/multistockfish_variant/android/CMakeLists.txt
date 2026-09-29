@@ -13,6 +13,7 @@ add_library(
   multistockfish_variant
   SHARED
   ../ios/multistockfish_variant/Sources/multistockfish_variant/stockfish_variant.cpp
+  ../ios/multistockfish_variant/Sources/multistockfish_variant/sfio.cpp
   ${cppPaths}
 )
 
