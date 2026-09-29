@@ -1,3 +1,7 @@
+## 0.6.1
+
+- Update package's description.
+
 ## 0.6.0
 
 **Breaking changes — Stockfish 19:**
