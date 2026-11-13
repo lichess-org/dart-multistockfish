@@ -44,11 +44,16 @@ This is a Dart workspace monorepo with the following structure:
 ### Engine Communication Pattern
 The engine runs on native threads, never on a Dart isolate (an isolate blocked in an FFI call
 makes hot reload hang):
-1. The calling isolate calls native `stockfish_init()`, then `stockfish_start(on_exit, on_output)`
-   with two `NativeCallable.listener`s; it returns at once
+1. The calling isolate calls native `stockfish_init()`, then `stockfish_start(post, exit_port,
+   output_port)` with `NativeApi.postCObject` and the native ports of two `ReceivePort`s; it
+   returns at once
 2. `start` (in `sfthreads.h`, shared by every flavour) runs `stockfish_main()` on one thread and
-   loops on `stockfish_stdout_read()` on another, reporting through the callbacks
-3. Commands sent via `stockfish_stdin_write()` from any thread
+   loops on `stockfish_stdout_read()` on another, posting the exit code and the output chunks
+   (UTF-8 bytes, decoded by `EngineOutputDecoder`) to the ports. Posting to a closed or dead
+   port is a no-op, which is why these are ports and not `NativeCallable`s
+3. If `init` reports an engine still running (e.g. after a hot restart), `create()` sends it `quit`
+   and retries `init` until it has gone
+4. Commands sent via `stockfish_stdin_write()` from any thread
 
 ### Important Constraints
 - `Stockfish` is a singleton - use `Stockfish.instance`

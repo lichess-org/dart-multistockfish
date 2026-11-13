@@ -3,8 +3,9 @@
 // ignore_for_file: deprecated_member_use_from_same_package
 
 import 'dart:async';
-import 'dart:ffi';
+import 'dart:convert';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,6 +20,13 @@ import 'package:multistockfish/src/bindings.dart';
 class MockStockfishBindings implements StockfishBindings {
   final List<String> stdinCalls = [];
   int initReturnValue = 0;
+
+  /// Results [init] returns before falling back to [initReturnValue], first
+  /// one first.
+  final List<int> initResults = [];
+
+  /// How many times [init] has been called.
+  int initCalls = 0;
   int startReturnValue = 0;
   void Function(String input)? onStdin;
 
@@ -33,13 +41,14 @@ class MockStockfishBindings implements StockfishBindings {
   String? lastErrorReturnValue;
 
   @override
-  int init() => initReturnValue;
+  int init() {
+    initCalls++;
+    return initResults.isNotEmpty ? initResults.removeAt(0) : initReturnValue;
+  }
 
   @override
-  int start(
-    Pointer<NativeFunction<EngineExitCallback>> onExit,
-    Pointer<NativeFunction<EngineOutputCallback>> onOutput,
-  ) => startReturnValue;
+  int start({required int exitPort, required int outputPort}) =>
+      startReturnValue;
 
   @override
   int stdinWrite(String input) {
@@ -81,7 +90,13 @@ class MockEngine {
 
   /// Simulates the engine outputting a line to stdout.
   void emitStdout(String line) {
-    _stdoutPort.send(line);
+    emitBytes(utf8.encode('$line\n'));
+  }
+
+  /// Simulates the reader posting a chunk of output, as the native one does: raw
+  /// UTF-8 bytes, cut wherever a read of the pipe happened to stop.
+  void emitBytes(List<int> chunk) {
+    _stdoutPort.send(Uint8List.fromList(chunk));
   }
 
   /// Simulates the engine exiting with the given code.
@@ -109,12 +124,6 @@ class MockEngine {
 
   /// Simulates the reader seeing the quit marker and returning.
   void stopReader() {
-    _stdoutPort.send(null);
-  }
-
-  /// Simulates the output callback failing on a chunk.
-  void failReader(String error) {
-    _stdoutPort.send({'error': error, 'stackTrace': '<no stack>'});
     _stdoutPort.send(null);
   }
 }
@@ -211,7 +220,7 @@ class MockEngineController {
     SendPort stdoutPort,
     StockfishFlavor flavor,
   ) async {
-    if (bindingsFor(flavor).initReturnValue != 0) {
+    if (bindingsFor(flavor).startReturnValue != 0) {
       return false;
     }
 
@@ -398,6 +407,90 @@ void main() {
         controller.bindings.initReturnValue = 0;
         final engine = await createEngine(controller);
         expect(engine.state.value, StockfishState.ready);
+      });
+    });
+
+    test('reassembles lines and characters split across chunks', () async {
+      final controller = MockEngineController();
+
+      await runWithMockStockfish(controller, () async {
+        final engine = await createEngine(controller);
+        final lines = <String>[];
+        engine.stdout.listen(lines.add);
+
+        // "é" is 0xC3 0xA9, and a read of the pipe can stop between the two.
+        controller.engine.emitBytes([...utf8.encode('info string caf'), 0xC3]);
+        controller.engine.emitBytes([0xA9, ...utf8.encode('\nbestmove e2')]);
+        controller.engine.emitBytes(utf8.encode('e4\n'));
+        await pumpEventQueue();
+
+        expect(lines, ['info string café', 'bestmove e2e4']);
+      });
+    });
+
+    group('an engine left behind by an earlier isolate', () {
+      test('is asked to quit, and the new engine starts once it has', () async {
+        final controller = MockEngineController();
+        // What the native library reports after a hot restart: the previous
+        // isolate's engine is still running, then exits, then its reader stops.
+        controller.bindings.initResults.addAll([-2, -2, -4, 0]);
+
+        await runWithMockStockfish(controller, () async {
+          final future = Stockfish.create();
+          await Future<void>.delayed(kOrphanPollInterval * 5);
+
+          expect(controller.bindings.stdinCalls.first, 'quit\n');
+          expect(controller.bindings.initCalls, 4);
+          expect(controller.engines, hasLength(1));
+
+          await controller.simulateStartup();
+          final engine = await future;
+          expect(engine.state.value, StockfishState.ready);
+        });
+      });
+
+      test('is not sent quit when only its reader is still running', () async {
+        final controller = MockEngineController();
+        controller.bindings.initResults.addAll([-4, 0]);
+
+        await runWithMockStockfish(controller, () async {
+          final future = Stockfish.create();
+          await Future<void>.delayed(kOrphanPollInterval * 3);
+
+          expect(controller.bindings.stdinCalls, isNot(contains('quit\n')));
+
+          await controller.simulateStartup();
+          expect((await future).state.value, StockfishState.ready);
+        });
+      });
+
+      test('that never quits fails the start after kQuitTimeout', () async {
+        final controller = MockEngineController();
+        controller.bindings.initReturnValue = -2;
+
+        await runWithMockStockfish(controller, () {
+          fakeAsync((async) {
+            Object? caughtError;
+            Stockfish.create().then<void>(
+              (_) {},
+              onError: (Object e) => caughtError = e,
+            );
+
+            async.elapse(kQuitTimeout - const Duration(milliseconds: 100));
+            expect(caughtError, isNull);
+
+            async.elapse(const Duration(milliseconds: 200));
+            expect(caughtError, isException);
+            expect(controller.engines, isEmpty);
+            expect(Stockfish.debugLiveEngines, isEmpty);
+            expect(
+              controller.bindings.stdinCalls.where((c) => c == 'quit\n'),
+              hasLength(1),
+            );
+
+            controller.bindings.initReturnValue = 0;
+          });
+        });
       });
     });
 
@@ -715,23 +808,6 @@ void main() {
         zombie.exit(0);
         await Future.delayed(Duration.zero);
         expect(engine.state.value, StockfishState.disposed);
-      });
-    });
-
-    test('fails the engine when its reader dies', () async {
-      final controller = MockEngineController();
-
-      await runWithMockStockfish(controller, () async {
-        final engine = await createEngine(controller);
-        expect(engine.state.value, StockfishState.ready);
-
-        // Nothing is draining the engine's output any more. It goes on running until its
-        // pipe fills and then answers nothing, so the session is over whatever it does.
-        controller.engine.failReader('Bad state: the reader blew up');
-        await pumpEventQueue();
-
-        expect(engine.state.value, StockfishState.error);
-        expect(() => engine.stdin = 'isready', throwsStateError);
       });
     });
 

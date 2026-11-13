@@ -80,6 +80,13 @@ static std::atomic<long long> g_phase_since_ms{0};
 // descriptors it redirected and the output stream it is still writing to.
 static std::atomic<bool> g_running{false};
 
+// True from the moment start() launches a reader until that reader has let go of
+// the output pipe. An engine's reader outlives the engine by as long as it takes
+// to read the quit marker, and a restart in that window would drain the marker
+// out from under it, leaving it blocked on the pipe as a second reader of the
+// next engine's output.
+static std::atomic<bool> g_reader_running{false};
+
 // Whether the pipes have been created. They are created once and reused, so a
 // restart neither leaks descriptors nor invalidates the ones the engine's
 // streams are bound to.
@@ -236,6 +243,14 @@ int stockfish_init()
         g_step.load(std::memory_order_relaxed),
         steady_now_ms() - g_phase_since_ms.load(std::memory_order_relaxed));
     return SF_INIT_ALREADY_RUNNING;
+  }
+
+  if (g_reader_running.load(std::memory_order_acquire))
+  {
+    set_error(
+        "init: refused, the previous engine exited but its reader has not let go of the "
+        "pipe yet");
+    return SF_INIT_READER_RUNNING;
   }
 
   // A reader that was killed rather than allowed to finish leaves its carry and
@@ -525,33 +540,37 @@ char *stockfish_stdout_read()
   }
 }
 
-int stockfish_start(void (*on_exit)(int32_t), void (*on_output)(char *))
+int stockfish_start(bool (*post)(int64_t, void *), int64_t exit_port, int64_t output_port)
 {
-  if (on_exit == NULL || on_output == NULL)
+  if (post == NULL || exit_port == 0 || output_port == 0)
   {
-    set_error("start: both callbacks are required");
+    set_error("start: Dart_PostCObject and both ports are required");
     return SF_START_INVALID_ARGUMENT;
   }
 
-  // Refused before the reader starts: a reader started next to a running engine
-  // would be a second one on its pipe, taking its output at random.
-  if (g_running.load(std::memory_order_acquire))
+  // Refused before the reader starts: a reader started next to a running engine,
+  // or next to the previous engine's reader, would share its pipe and take its
+  // output at random.
+  if (g_running.load(std::memory_order_acquire) ||
+      g_reader_running.load(std::memory_order_acquire))
   {
     set_error(
-        "start: refused, an engine is already running (phase=%d step=%s for %lldms)",
+        "start: refused, an engine or its reader is still running (phase=%d step=%s for %lldms)",
         g_phase.load(std::memory_order_relaxed),
         g_step.load(std::memory_order_relaxed),
         steady_now_ms() - g_phase_since_ms.load(std::memory_order_relaxed));
     return SF_START_ALREADY_RUNNING;
   }
 
-  if (!sfthreads::spawn_reader(stockfish_stdout_read, on_output))
+  g_reader_running.store(true, std::memory_order_release);
+  if (!sfthreads::spawn_reader(stockfish_stdout_read, post, output_port, &g_reader_running))
   {
+    g_reader_running.store(false, std::memory_order_release);
     set_error("start: could not create the reader thread");
     return SF_START_THREAD_FAILED;
   }
 
-  if (!sfthreads::spawn_engine(stockfish_main, on_exit))
+  if (!sfthreads::spawn_engine(stockfish_main, post, exit_port))
   {
     set_error("start: could not create the engine thread");
     set_phase(SF_PHASE_FAILED, "thread_failed");

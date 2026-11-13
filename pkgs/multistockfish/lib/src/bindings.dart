@@ -1,34 +1,8 @@
-import 'dart:convert';
 import 'dart:ffi' as ffi;
 import 'package:ffi/ffi.dart';
 import 'package:logging/logging.dart';
 
 final _logger = Logger('Stockfish');
-
-/// Decodes a NUL-terminated chunk of engine output.
-///
-/// Deliberately not `Utf8Pointer.toDartString()`, which is
-/// `utf8.decode(..., allowMalformed: false)` and therefore *throws* on a partial
-/// sequence. A chunk is a slice of a byte stream, so a multi-byte character can
-/// straddle two of them — and that throw would land in the output callback, which
-/// would then fail the whole session over one split character.
-///
-/// A replacement character on one line of engine output is a far better outcome,
-/// and it makes the reader proof against malformed bytes from an engine that is
-/// already misbehaving, not only against split ones.
-String decodeEngineChunk(ffi.Pointer<ffi.Uint8> bytes) {
-  var length = 0;
-  while (bytes[length] != 0) {
-    length++;
-  }
-  return utf8.decode(bytes.asTypedList(length), allowMalformed: true);
-}
-
-/// The native signature of the callback receiving an engine's exit code.
-typedef EngineExitCallback = ffi.Void Function(ffi.Int32 exitCode);
-
-/// The native signature of the callback receiving an engine's output.
-typedef EngineOutputCallback = ffi.Void Function(ffi.Pointer<ffi.Uint8> chunk);
 
 /// Abstract interface for Stockfish native bindings.
 abstract class StockfishBindings {
@@ -40,19 +14,15 @@ abstract class StockfishBindings {
   /// Runs the engine and the reader of its output on native threads, and
   /// returns at once.
   ///
-  /// [onExit] receives the engine's exit code, described by
-  /// `describeMainExitCode`, once the engine has stopped. [onOutput] receives
-  /// each chunk of output as a NUL-terminated buffer allocated with `malloc`,
-  /// which the callee must free, and then `nullptr`, once and last, when the
-  /// reader has let go of the pipe. Both are called from native threads, so they
-  /// must be `NativeCallable.listener`s.
+  /// The threads post to native ports (`SendPort.nativePort`). [exitPort]
+  /// receives the engine's exit code, described by `describeMainExitCode`, once
+  /// the engine has stopped. [outputPort] receives each chunk of output as a
+  /// `Uint8List` of UTF-8 bytes, which may end part way through a character,
+  /// and then `null`, once and last, when the reader has let go of the pipe.
   ///
   /// Returns 0 when both are running, or a negative code described by
-  /// `describeStartCode`, in which case [onExit] is never called.
-  int start(
-    ffi.Pointer<ffi.NativeFunction<EngineExitCallback>> onExit,
-    ffi.Pointer<ffi.NativeFunction<EngineOutputCallback>> onOutput,
-  );
+  /// `describeStartCode`, in which case nothing is posted to [exitPort].
+  int start({required int exitPort, required int outputPort});
 
   /// Writes to the Stockfish engine's stdin.
   ///
@@ -113,11 +83,8 @@ class StockfishBindingsFFI implements StockfishBindings {
   }
 
   @override
-  int start(
-    ffi.Pointer<ffi.NativeFunction<EngineExitCallback>> onExit,
-    ffi.Pointer<ffi.NativeFunction<EngineOutputCallback>> onOutput,
-  ) {
-    return _start(onExit, onOutput);
+  int start({required int exitPort, required int outputPort}) {
+    return _start(ffi.NativeApi.postCObject.cast(), exitPort, outputPort);
   }
 
   @override
@@ -188,19 +155,12 @@ class StockfishBindingsFFI implements StockfishBindings {
 
   late final _start =
       _lookup<
-            ffi.NativeFunction<
-              ffi.Int32 Function(
-                ffi.Pointer<ffi.NativeFunction<EngineExitCallback>>,
-                ffi.Pointer<ffi.NativeFunction<EngineOutputCallback>>,
-              )
-            >
-          >('${_prefix}start')
-          .asFunction<
-            int Function(
-              ffi.Pointer<ffi.NativeFunction<EngineExitCallback>>,
-              ffi.Pointer<ffi.NativeFunction<EngineOutputCallback>>,
-            )
-          >();
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<ffi.Void>, ffi.Int64, ffi.Int64)
+        >
+      >(
+        '${_prefix}start',
+      ).asFunction<int Function(ffi.Pointer<ffi.Void>, int, int)>();
 
   late final _stdinWritePtr =
       _lookup<ffi.NativeFunction<ffi.IntPtr Function(ffi.Pointer<Utf8>)>>(

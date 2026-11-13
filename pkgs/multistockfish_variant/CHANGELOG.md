@@ -1,8 +1,11 @@
 ## 0.5.0
 
 - Add `stockfish_variant_start()`, which runs the engine and the reader of its output on threads
-  of the library's own and reports through callbacks, so that no Dart isolate
-  has to block in a native call for the engine's lifetime.
+  of the library's own and reports by posting to Dart ports through
+  `Dart_PostCObject`, so that no Dart isolate has to block in a native call for
+  the engine's lifetime.
+- `init()` now also refuses, with `SF_INIT_READER_RUNNING`, while the previous
+  engine's reader has not let go of the pipe.
 
 ## 0.4.0
 

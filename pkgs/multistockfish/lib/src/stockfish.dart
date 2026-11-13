@@ -3,11 +3,11 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 
 import 'bindings.dart';
+import 'engine_output.dart';
 import 'stockfish_diagnostics.dart';
 import 'stockfish_flavor.dart';
 import 'stockfish_state.dart';
@@ -28,6 +28,10 @@ const kStartTimeout = Duration(seconds: 5);
 /// How long an engine is given to exit after being asked to quit, before it is
 /// abandoned.
 const kQuitTimeout = Duration(seconds: 5);
+
+/// How often a start retries the native init while it waits for an engine left
+/// behind by an earlier isolate to go away.
+const kOrphanPollInterval = Duration(milliseconds: 20);
 
 /// How long an exited engine's reader is given to let go of the pipe.
 ///
@@ -260,6 +264,21 @@ class Stockfish {
   }
 
   Future<void> _doStart() async {
+    final bindings = _bindings;
+    var initResult = bindings.init();
+    // Only awaited when there is something to wait for, so that a normal start
+    // reaches the engine threads without yielding first.
+    if (_isLeftoverEngine(initResult)) {
+      initResult = await _stopLeftoverEngine(_flavor, initResult);
+    }
+    if (initResult != 0) {
+      _logger.severe(
+        'Failed to initialize the ${_flavor.name} engine (init returned '
+        '$initResult): ${describeInitCode(initResult)}. $diagnostics',
+      );
+      throw Exception('Failed to initialize the ${_flavor.name} engine');
+    }
+
     late final _RunningEngine engine;
     engine = _RunningEngine(
       onExit: (exitCode) {
@@ -273,18 +292,10 @@ class Stockfish {
       onStdout: (line) {
         if (!_stdoutController.isClosed) _stdoutController.add(line);
       },
-      onReaderFailed: (error) {
-        _logger.severe(
-          'The reader for the ${_flavor.name} engine died, so nothing is draining its '
-          'output any more. The engine will stop answering as soon as its pipe fills, so '
-          'this session is over. $diagnostics\n$error',
-        );
-        _state._setValue(StockfishState.error);
-      },
     );
     _engine = engine;
 
-    final success = await _spawnEngine(
+    final success = await _startNative(
       engine.mainPort.sendPort,
       engine.stdoutPort.sendPort,
       _flavor,
@@ -663,8 +674,9 @@ class Stockfish {
 
 /// The ports of a single engine, and its lifetime.
 ///
-/// The engine's native threads report through [_NativeCallbacks], which forward
-/// to these ports; tests post to them directly.
+/// The engine's native threads post straight to these ports, as do the fakes in
+/// tests. A closed port makes those posts no-ops, so closing them is all it
+/// takes to stop hearing from an engine, even one that is still running.
 ///
 /// Each engine gets its own ports so that closing them is enough to make an
 /// abandoned engine invisible to the [Stockfish] handle that started it.
@@ -672,7 +684,6 @@ class _RunningEngine {
   _RunningEngine({
     required void Function(int exitCode) onExit,
     required void Function(String line) onStdout,
-    required void Function(String error) onReaderFailed,
   }) {
     mainPort.listen((message) {
       _logger.fine('The engine thread sent $message');
@@ -690,21 +701,8 @@ class _RunningEngine {
         return;
       }
 
-      // The reader reporting that it died rather than finished.
-      if (message is Map) {
-        onReaderFailed('${message['error']}\n${message['stackTrace']}');
-        return;
-      }
-
-      // A batch of lines from the reader, or a single line from a test's fake.
-      final lines = switch (message) {
-        final List<Object?> batch => batch,
-        final String line => [line],
-        _ => const <Object?>[],
-      };
-
-      if (lines.isEmpty) {
-        _logger.fine('The reader sent $message');
+      if (message is! List<int>) {
+        _logger.warning('The reader sent an unexpected message: $message');
         return;
       }
 
@@ -712,13 +710,15 @@ class _RunningEngine {
       // writes, and the interpolation below is not free when nobody is listening.
       final trace = _logger.isLoggable(Level.FINEST);
 
-      for (final line in lines) {
-        if (line is! String) continue;
+      for (final line in _output.add(message)) {
         if (trace) _logger.finest('[stdout] $line');
         onStdout(line);
       }
     });
   }
+
+  /// Reassembles the chunks the reader posts into lines.
+  final _output = EngineOutputDecoder();
 
   final mainPort = ReceivePort('Stockfish engine exit port');
   final stdoutPort = ReceivePort('Stockfish engine output port');
@@ -811,15 +811,75 @@ StockfishBindings _getBindings(StockfishFlavor flavor) {
   }
 }
 
-/// Starts an engine of [flavor] on its native threads, which report its exit
-/// code to [mainPort] and its output to [stdoutPort].
+/// `SF_INIT_ALREADY_RUNNING`: an engine of the flavor is still running.
+const _kInitAlreadyRunning = -2;
+
+/// `SF_INIT_READER_RUNNING`: the engine exited but its reader has not stopped.
+const _kInitReaderRunning = -4;
+
+/// Whether an init [result] reports an engine, or its reader, still running.
+///
+/// The caller holds the flavor's slot, so such an engine belongs to no handle in
+/// this isolate. It was started by an isolate that is gone — a hot restart
+/// replaces the isolate but not the process, and leaves the engine running — or
+/// abandoned by this one when it would not quit.
+bool _isLeftoverEngine(int result) =>
+    result == _kInitAlreadyRunning || result == _kInitReaderRunning;
+
+/// Stops an engine of [flavor] left behind with no handle, and returns the
+/// result of the init that follows.
+///
+/// Nobody else will ever stop it, so it is sent `quit` through the input pipe,
+/// which belongs to the process and not to an isolate, and the init is retried
+/// until the engine and its reader have gone or [kQuitTimeout] runs out.
+///
+/// The slots are per isolate, so an engine of the same flavor that another live
+/// isolate of this process is using would be stopped the same way.
+Future<int> _stopLeftoverEngine(StockfishFlavor flavor, int result) async {
+  final bindings = _getBindings(flavor);
+
+  _logger.warning(
+    'A ${flavor.name} engine started earlier in this process is still running, '
+    'with no handle left to stop it (after a hot restart, or an engine that '
+    'would not quit). Asking it to quit. '
+    'phase=${StockfishPhase.fromCode(bindings.phase()).name} '
+    'step=${bindings.phaseStep()}',
+  );
+
+  // An engine that has already exited only needs its reader to catch up, and a
+  // stray quit left in the pipe would be drained by the next init anyway.
+  if (result == _kInitAlreadyRunning) {
+    final written = bindings.stdinWrite('quit\n');
+    if (written < 0) {
+      _logger.severe(
+        'The leftover ${flavor.name} engine could not be sent quit: '
+        '${describeWriteCode(written)}.',
+      );
+    }
+  }
+
+  for (
+    var waited = Duration.zero;
+    waited < kQuitTimeout && _isLeftoverEngine(result);
+    waited += kOrphanPollInterval
+  ) {
+    await Future<void>.delayed(kOrphanPollInterval);
+    result = bindings.init();
+  }
+
+  if (result == 0) _logger.info('The leftover ${flavor.name} engine has quit.');
+  return result;
+}
+
+/// Starts an initialized engine of [flavor] on its native threads, which post
+/// its exit code to [mainPort] and its output to [stdoutPort].
 ///
 /// The engine's UCI loop and the read of its output pipe both block for as long
 /// as the engine lives, and both run on threads of the native library's own.
 /// Run from Dart isolates instead, they would pin those isolates inside FFI
 /// calls that never return, and a hot reload, which has to stop every isolate
 /// of the app at a safepoint first, would wait for them forever.
-Future<bool> _spawnEngine(
+Future<bool> _startNative(
   SendPort mainPort,
   SendPort stdoutPort,
   StockfishFlavor flavor,
@@ -836,100 +896,21 @@ Future<bool> _spawnEngine(
   }
 
   final bindings = _getBindings(flavor);
-
-  final initResult = bindings.init();
-  if (initResult != 0) {
-    _logger.severe(
-      'Failed to initialize the ${flavor.name} engine (init returned '
-      '$initResult): ${describeInitCode(initResult)}. '
-      'phase=${StockfishPhase.fromCode(bindings.phase()).name} '
-      'step=${bindings.phaseStep()} '
-      'for ${bindings.phaseElapsedMs()}ms'
-      '${bindings.lastError() == null ? '' : '; native error: ${bindings.lastError()}'}',
-    );
-    return false;
-  }
-
-  final callbacks = _NativeCallbacks(mainPort, stdoutPort);
-  final startResult = bindings.start(
-    callbacks.onExit.nativeFunction,
-    callbacks.onOutput.nativeFunction,
+  final result = bindings.start(
+    exitPort: mainPort.nativePort,
+    outputPort: stdoutPort.nativePort,
   );
-  if (startResult != 0) {
+  if (result != 0) {
     _logger.severe(
-      'Failed to start the ${flavor.name} engine (start returned '
-      '$startResult): ${describeStartCode(startResult)}.'
+      'Failed to start the ${flavor.name} engine (start returned $result): '
+      '${describeStartCode(result)}.'
       '${bindings.lastError() == null ? '' : ' Native error: ${bindings.lastError()}'}',
     );
-    callbacks.startFailed(startResult);
     return false;
   }
 
   return true;
 }
-
-/// The callbacks an engine's native threads report through, forwarding to the
-/// ports of the [_RunningEngine] that started it.
-///
-/// Each callback is closed once it has received its last call, and not before:
-/// calling a closed `NativeCallable` from native code is undefined behaviour,
-/// so one that might still be called stays open. An abandoned engine's
-/// callbacks are therefore never closed; neither keeps the isolate alive.
-class _NativeCallbacks {
-  _NativeCallbacks(SendPort mainPort, SendPort stdoutPort) {
-    onExit = NativeCallable<EngineExitCallback>.listener((int exitCode) {
-      mainPort.send(exitCode);
-      onExit.close();
-    })..keepIsolateAlive = false;
-
-    onOutput = NativeCallable<EngineOutputCallback>.listener((
-      Pointer<Uint8> chunk,
-    ) {
-      // The reader's own end of stream, not engine output.
-      if (chunk == nullptr) {
-        stdoutPort.send(null);
-        onOutput.close();
-        return;
-      }
-
-      try {
-        final lines = (_previous + decodeEngineChunk(chunk)).split('\n');
-        _previous = lines.removeLast();
-
-        // One message for the whole chunk rather than one per line. A page of
-        // engine output holds dozens of `info` lines during a multi-PV search.
-        if (lines.isNotEmpty) stdoutPort.send(lines);
-      } catch (error, stackTrace) {
-        stdoutPort.send({'error': '$error', 'stackTrace': '$stackTrace'});
-      } finally {
-        malloc.free(chunk);
-      }
-    })..keepIsolateAlive = false;
-  }
-
-  /// Receives the engine's exit code.
-  late final NativeCallable<EngineExitCallback> onExit;
-
-  /// Receives the engine's output, chunk by chunk, then `nullptr`.
-  late final NativeCallable<EngineOutputCallback> onOutput;
-
-  /// The unfinished last line of the previous chunk.
-  String _previous = '';
-
-  /// Releases the callbacks of an engine whose start failed with [code].
-  ///
-  /// A failed start never reports an exit. The reader is not running either,
-  /// unless it was the engine thread that could not be created: the reader then
-  /// still delivers its end of stream, and closes its own callback.
-  void startFailed(int code) {
-    onExit.close();
-    if (code != _kStartThreadFailed) onOutput.close();
-  }
-}
-
-/// `SF_START_THREAD_FAILED`, the one start failure that may leave the reader
-/// running.
-const _kStartThreadFailed = -3;
 
 class _StockfishState extends ChangeNotifier
     implements ValueListenable<StockfishState> {

@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,6 +49,7 @@
 #define SF_INIT_PIPE_FAILED (-1)
 #define SF_INIT_ALREADY_RUNNING (-2)
 #define SF_INIT_FCNTL_FAILED (-3)
+#define SF_INIT_READER_RUNNING (-4)  // the previous engine exited, its reader has not stopped yet
 
 // Error codes returned by stockfish_main(). Non-negative values are the
 // engine's own exit code.
@@ -92,19 +94,20 @@ FFI_PLUGIN_EXPORT char * stockfish_stdout_read();
 /// own, and returns at once. Call it after a successful stockfish_init(), in place of
 /// calling stockfish_main() and stockfish_stdout_read() from threads of the caller's.
 ///
-/// [on_exit] receives the engine's exit code, as stockfish_main() would return it,
-/// once the engine has stopped. [on_output] receives every chunk of output as a
-/// NUL-terminated copy allocated with malloc(), which the callee owns and must
-/// free(), and then NULL, once and last, when the reader has let go of the pipe.
-/// Both are called from the library's threads.
+/// The threads report by calling [post], which must be Dart_PostCObject (on the
+/// Dart side, `NativeApi.postCObject`). [exit_port] receives the engine's exit
+/// code, as stockfish_main() would return it, once the engine has stopped.
+/// [output_port] receives every chunk of output as a Uint8List of UTF-8 bytes,
+/// which may end part way through a character, and then null, once and last,
+/// when the reader has let go of the pipe.
 ///
 /// Returns 0 when both threads are running, or one of the SF_START_* codes, in
-/// which case [on_exit] is never called; [on_output] still receives its NULL if
-/// the reader had already started.
+/// which case nothing is posted to [exit_port]; [output_port] still receives its
+/// null if the reader had already started.
 #ifdef __cplusplus
 extern "C" __attribute__((visibility("default"))) __attribute__((used))
 #endif
-FFI_PLUGIN_EXPORT int stockfish_start(void (*on_exit)(int32_t), void (*on_output)(char *));
+FFI_PLUGIN_EXPORT int stockfish_start(bool (*post)(int64_t, void *), int64_t exit_port, int64_t output_port);
 
 /// The engine's current lifecycle phase, as one of the SF_PHASE_* values.
 #ifdef __cplusplus
