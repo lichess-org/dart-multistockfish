@@ -550,9 +550,14 @@ int stockfish_light_start(bool (*post)(int64_t, void *), int64_t exit_port, int6
 
   // Refused before the reader starts: a reader started next to a running engine,
   // or next to the previous engine's reader, would share its pipe and take its
-  // output at random.
+  // output at random. The reader slot is claimed in the same step as it is
+  // checked, so that of two concurrent calls only one can get past here: two
+  // readers on one pipe would race on its shared buffers, and one could be left
+  // blocked on it forever.
+  bool reader_running = false;
   if (g_running.load(std::memory_order_acquire) ||
-      g_reader_running.load(std::memory_order_acquire))
+      !g_reader_running.compare_exchange_strong(
+          reader_running, true, std::memory_order_acq_rel, std::memory_order_acquire))
   {
     set_error(
         "start: refused, an engine or its reader is still running (phase=%d step=%s for %lldms)",
@@ -562,7 +567,6 @@ int stockfish_light_start(bool (*post)(int64_t, void *), int64_t exit_port, int6
     return SF_START_ALREADY_RUNNING;
   }
 
-  g_reader_running.store(true, std::memory_order_release);
   if (!sfthreads::spawn_reader(stockfish_light_stdout_read, post, output_port, &g_reader_running))
   {
     g_reader_running.store(false, std::memory_order_release);
