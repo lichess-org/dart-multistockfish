@@ -846,9 +846,16 @@ Future<int> _stopLeftoverEngine(StockfishFlavor flavor, int result) async {
     'step=${bindings.phaseStep()}',
   );
 
-  // An engine that has already exited only needs its reader to catch up, and a
-  // stray quit left in the pipe would be drained by the next init anyway.
-  if (result == _kInitAlreadyRunning) {
+  // An engine that has already exited only needs its reader to catch up, so
+  // quit waits for a result that reports the engine itself still running. That
+  // can come after a reader-only result too: the native side marks the reader
+  // running before the engine enters main(), so a hot restart during startup
+  // reports -4 first and -2 once the engine is up. Sent once: a stray quit left
+  // in the pipe would be drained by the next init anyway.
+  var quitSent = false;
+  void sendQuitIfEngineRunning() {
+    if (quitSent || result != _kInitAlreadyRunning) return;
+    quitSent = true;
     final written = bindings.stdinWrite('quit\n');
     if (written < 0) {
       _logger.severe(
@@ -858,6 +865,7 @@ Future<int> _stopLeftoverEngine(StockfishFlavor flavor, int result) async {
     }
   }
 
+  sendQuitIfEngineRunning();
   for (
     var waited = Duration.zero;
     waited < kQuitTimeout && _isLeftoverEngine(result);
@@ -865,6 +873,7 @@ Future<int> _stopLeftoverEngine(StockfishFlavor flavor, int result) async {
   ) {
     await Future<void>.delayed(kOrphanPollInterval);
     result = bindings.init();
+    sendQuitIfEngineRunning();
   }
 
   if (result == 0) _logger.info('The leftover ${flavor.name} engine has quit.');

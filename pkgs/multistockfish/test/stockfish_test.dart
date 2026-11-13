@@ -464,6 +464,27 @@ void main() {
         });
       });
 
+      test('is sent quit once it is caught still starting up', () async {
+        final controller = MockEngineController();
+        // A hot restart during native startup: the reader is marked running
+        // before the engine enters main(), so -4 comes before -2.
+        controller.bindings.initResults.addAll([-4, -2, -2, -4, 0]);
+
+        await runWithMockStockfish(controller, () async {
+          final future = Stockfish.create();
+          await Future<void>.delayed(kOrphanPollInterval * 6);
+
+          expect(
+            controller.bindings.stdinCalls.where((c) => c == 'quit\n'),
+            hasLength(1),
+          );
+          expect(controller.bindings.initCalls, 5);
+
+          await controller.simulateStartup();
+          expect((await future).state.value, StockfishState.ready);
+        });
+      });
+
       test('that never quits fails the start after kQuitTimeout', () async {
         final controller = MockEngineController();
         controller.bindings.initReturnValue = -2;
