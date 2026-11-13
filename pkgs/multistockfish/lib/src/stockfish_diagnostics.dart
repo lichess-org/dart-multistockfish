@@ -127,6 +127,15 @@ String describeInitCode(int code) => switch (code) {
   _ => 'unknown init error ($code)',
 };
 
+/// Describes a value returned by the native `start` function.
+String describeStartCode(int code) => switch (code) {
+  0 => 'ok',
+  -1 => 'a callback was missing',
+  -2 => 'refused: an engine is already running',
+  -3 => 'a thread could not be created',
+  _ => 'unknown start error ($code)',
+};
+
 /// Describes a value returned by the native `main` function.
 ///
 /// Non-negative values are the engine's own exit code.

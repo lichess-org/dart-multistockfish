@@ -36,15 +36,18 @@ This is a Dart workspace monorepo with the following structure:
 - **pkgs/multistockfish_variant**: Native C++ library for Fairy-Stockfish (variants)
 
 ### Key Files in pkgs/multistockfish/lib/
-- `src/stockfish.dart`: Main `Stockfish` class - singleton, manages isolates for engine communication
+- `src/stockfish.dart`: Main `Stockfish` class - per-flavor engine handles, starts the native engine threads
 - `src/bindings.dart`: FFI bindings to native C++ libraries
 - `src/stockfish_flavor.dart`: Enum defining engine variants
 - `src/stockfish_state.dart`: Engine lifecycle states (initial, starting, ready, error)
 
 ### Engine Communication Pattern
-The engine runs in separate isolates:
-1. Main isolate calls native `stockfish_init()` and `stockfish_main()`
-2. Stdout isolate continuously polls `stockfish_stdout_read()`
+The engine runs on native threads, never on a Dart isolate (an isolate blocked in an FFI call
+makes hot reload hang):
+1. The calling isolate calls native `stockfish_init()`, then `stockfish_start(on_exit, on_output)`
+   with two `NativeCallable.listener`s; it returns at once
+2. `start` (in `sfthreads.h`, shared by every flavour) runs `stockfish_main()` on one thread and
+   loops on `stockfish_stdout_read()` on another, reporting through the callbacks
 3. Commands sent via `stockfish_stdin_write()` from any thread
 
 ### Important Constraints

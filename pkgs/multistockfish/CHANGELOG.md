@@ -1,3 +1,14 @@
+## 0.7.0
+
+- Hot reload no longer hangs while an engine is running. The engine and the
+  reader of its output now run on native threads instead of two Dart isolates
+  blocked in FFI calls, which the Dart VM could not stop for a reload.
+- Requires `multistockfish_chess` 0.7.0, `multistockfish_light` 0.2.0 and
+  `multistockfish_variant` 0.5.0, which add the native `start` entry point.
+- **Breaking** (testing API): `stockfishSpawnIsolatesKey` is renamed
+  `stockfishSpawnEngineKey`, and `StockfishBindings.main()`/`stdoutRead()` are
+  replaced by `start()`.
+
 ## 0.6.1
 
 - Update package's description.

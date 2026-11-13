@@ -1,9 +1,10 @@
 // Host integration test for the multistockfish native shim (variant flavour).
 //
 // Exercises the P1 hardening -- the re-entry guard, pipe reuse across a restart,
-// no descriptor leak, and the non-blocking stdin write -- and the P2 guarantee
-// that the engine talks to its own pipe rather than to the process's standard
-// descriptors.
+// no descriptor leak, and the non-blocking stdin write -- the P2 guarantee that
+// the engine talks to its own pipe rather than to the process's standard
+// descriptors, and start(), which runs the engine and its reader on threads of
+// the library's own.
 //
 // Diagnostics go to stderr, which leaves this process's stdout free to be checked
 // for exactly the interference the engine no longer causes.
@@ -11,6 +12,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -24,6 +26,7 @@ int stockfish_variant_init();
 int stockfish_variant_main();
 ssize_t stockfish_variant_stdin_write(char *data);
 char *stockfish_variant_stdout_read();
+int stockfish_variant_start(void (*on_exit)(int32_t), void (*on_output)(char *));
 int stockfish_variant_phase();
 const char *stockfish_variant_phase_step();
 long long stockfish_variant_phase_elapsed_ms();
@@ -124,6 +127,79 @@ static int open_fd_count()
   return count;
 }
 
+// ---------------------------------------------------------------------------
+// start(): the library's own threads, reporting through callbacks.
+
+static int g_start_exit_code = -99;
+static bool g_start_exited = false;
+static bool g_start_reader_done = false;
+
+static void on_start_exit(int32_t code)
+{
+  {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_start_exit_code = code;
+    g_start_exited = true;
+  }
+  g_cv.notify_all();
+}
+
+static void on_start_output(char *chunk)
+{
+  {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (chunk == nullptr)
+      g_start_reader_done = true;
+    else
+      g_output += chunk;
+  }
+  // The callee owns the chunk, as the Dart side does.
+  free(chunk);
+  g_cv.notify_all();
+}
+
+static bool wait_for_start_end(int timeout_ms = 15000)
+{
+  std::unique_lock<std::mutex> lock(g_mutex);
+  return g_cv.wait_for(lock, std::chrono::milliseconds(timeout_ms),
+                       [] { return g_start_exited && g_start_reader_done; });
+}
+
+static void run_started_session()
+{
+  fprintf(stderr, "\n-- start() --\n");
+
+  reset_output();
+  {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_start_exit_code = -99;
+    g_start_exited = false;
+    g_start_reader_done = false;
+  }
+
+  check(stockfish_variant_init() == 0, "init succeeds before start");
+  check(stockfish_variant_start(nullptr, on_start_output) == -1,
+        "start refuses a missing callback");
+  check(stockfish_variant_start(on_start_exit, on_start_output) == 0,
+        "start returns at once");
+
+  check(wait_for_output("Fairy-Stockfish"), "engine announces itself through the callback");
+  check(stockfish_variant_start(on_start_exit, on_start_output) == -2,
+        "a second start is refused while the engine runs");
+
+  check(send("uci\n") > 0, "uci accepted");
+  check(wait_for_output("uciok"), "engine answers uciok through the callback");
+
+  check(send("quit\n") > 0, "quit accepted");
+  check(wait_for_start_end(), "both the exit and the reader's end are reported");
+  check(g_start_exit_code == 0, "engine exits with 0");
+  check(stockfish_variant_phase() == SF_PHASE_EXITED, "phase is exited");
+  {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    check(g_output.find("quitok") == std::string::npos, "the quit marker is not delivered");
+  }
+}
+
 // One full lifecycle: init, boot, uci handshake, quit, and a clean exit.
 static void run_engine_session(const char *label, int *exit_code)
 {
@@ -197,6 +273,9 @@ int main()
   run_engine_session("restart", &exit_code);
 
   const int fds_after_second = open_fd_count();
+
+  // --- session 3: the library's own threads -------------------------------
+  run_started_session();
   fprintf(stderr, "\n-- descriptors --\n");
   fprintf(stderr, "  ..  start=%d after 1st=%d after 2nd=%d\n", fds_at_start,
           fds_after_first, fds_after_second);

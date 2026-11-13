@@ -20,6 +20,7 @@
 #include "StockfishLight/src/tune.h"
 
 #include "sfio.h"
+#include "sfthreads.h"
 #include "./include/multistockfish_light/stockfish_light.h"
 
 // https://jineshkj.wordpress.com/2006/12/22/how-to-capture-stdin-stdout-and-stderr-of-child-program/
@@ -522,6 +523,45 @@ char *stockfish_light_stdout_read()
 
     return buffer;
   }
+}
+
+int stockfish_light_start(void (*on_exit)(int32_t), void (*on_output)(char *))
+{
+  if (on_exit == NULL || on_output == NULL)
+  {
+    set_error("start: both callbacks are required");
+    return SF_START_INVALID_ARGUMENT;
+  }
+
+  // Refused before the reader starts: a reader started next to a running engine
+  // would be a second one on its pipe, taking its output at random.
+  if (g_running.load(std::memory_order_acquire))
+  {
+    set_error(
+        "start: refused, an engine is already running (phase=%d step=%s for %lldms)",
+        g_phase.load(std::memory_order_relaxed),
+        g_step.load(std::memory_order_relaxed),
+        steady_now_ms() - g_phase_since_ms.load(std::memory_order_relaxed));
+    return SF_START_ALREADY_RUNNING;
+  }
+
+  if (!sfthreads::spawn_reader(stockfish_light_stdout_read, on_output))
+  {
+    set_error("start: could not create the reader thread");
+    return SF_START_THREAD_FAILED;
+  }
+
+  if (!sfthreads::spawn_engine(stockfish_light_main, on_exit))
+  {
+    set_error("start: could not create the engine thread");
+    set_phase(SF_PHASE_FAILED, "thread_failed");
+    // The reader is already waiting on the pipe. The quit marker is what lets
+    // it go, and no engine is going to write it.
+    signal_quit();
+    return SF_START_THREAD_FAILED;
+  }
+
+  return 0;
 }
 
 int stockfish_light_phase()

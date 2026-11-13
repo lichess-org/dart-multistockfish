@@ -1,3 +1,9 @@
+## 0.5.0
+
+- Add `stockfish_variant_start()`, which runs the engine and the reader of its output on threads
+  of the library's own and reports through callbacks, so that no Dart isolate
+  has to block in a native call for the engine's lifetime.
+
 ## 0.4.0
 
 - **Breaking:** the engine no longer redirects the process's `stdin` and

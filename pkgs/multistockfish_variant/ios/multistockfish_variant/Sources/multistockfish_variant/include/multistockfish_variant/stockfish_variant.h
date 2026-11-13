@@ -63,6 +63,11 @@
 #define SF_WRITE_PIPE_FULL (-3)
 #define SF_WRITE_PARTIAL (-4)
 
+// Error codes returned by stockfish_variant_start().
+#define SF_START_INVALID_ARGUMENT (-1)
+#define SF_START_ALREADY_RUNNING (-2)
+#define SF_START_THREAD_FAILED (-3)
+
 #ifdef __cplusplus
 extern "C" __attribute__((visibility("default"))) __attribute__((used))
 #endif
@@ -82,6 +87,24 @@ FFI_PLUGIN_EXPORT ssize_t stockfish_variant_stdin_write(char *data);
 extern "C" __attribute__((visibility("default"))) __attribute__((used))
 #endif
 FFI_PLUGIN_EXPORT char * stockfish_variant_stdout_read();
+
+/// Runs the engine and the reader of its output on threads of this library's
+/// own, and returns at once. Call it after a successful stockfish_variant_init(), in place of
+/// calling stockfish_variant_main() and stockfish_variant_stdout_read() from threads of the caller's.
+///
+/// [on_exit] receives the engine's exit code, as stockfish_variant_main() would return it,
+/// once the engine has stopped. [on_output] receives every chunk of output as a
+/// NUL-terminated copy allocated with malloc(), which the callee owns and must
+/// free(), and then NULL, once and last, when the reader has let go of the pipe.
+/// Both are called from the library's threads.
+///
+/// Returns 0 when both threads are running, or one of the SF_START_* codes, in
+/// which case [on_exit] is never called; [on_output] still receives its NULL if
+/// the reader had already started.
+#ifdef __cplusplus
+extern "C" __attribute__((visibility("default"))) __attribute__((used))
+#endif
+FFI_PLUGIN_EXPORT int stockfish_variant_start(void (*on_exit)(int32_t), void (*on_output)(char *));
 
 /// The engine's current lifecycle phase, as one of the SF_PHASE_* values.
 #ifdef __cplusplus

@@ -1,3 +1,9 @@
+## 0.7.0
+
+- Add `stockfish_start()`, which runs the engine and the reader of its output on threads
+  of the library's own and reports through callbacks, so that no Dart isolate
+  has to block in a native call for the engine's lifetime.
+
 ## 0.6.0
 
 - Update Stockfish to version 19 (the `sf_19` release).

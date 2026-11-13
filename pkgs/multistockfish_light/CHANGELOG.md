@@ -1,3 +1,9 @@
+## 0.2.0
+
+- Add `stockfish_light_start()`, which runs the engine and the reader of its output on threads
+  of the library's own and reports through callbacks, so that no Dart isolate
+  has to block in a native call for the engine's lifetime.
+
 ## 0.1.0
 
 Initial version.

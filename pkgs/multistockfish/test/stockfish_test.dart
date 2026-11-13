@@ -3,6 +3,7 @@
 // ignore_for_file: deprecated_member_use_from_same_package
 
 import 'dart:async';
+import 'dart:ffi';
 import 'dart:isolate';
 
 import 'package:fake_async/fake_async.dart';
@@ -18,7 +19,7 @@ import 'package:multistockfish/src/bindings.dart';
 class MockStockfishBindings implements StockfishBindings {
   final List<String> stdinCalls = [];
   int initReturnValue = 0;
-  int mainReturnValue = 0;
+  int startReturnValue = 0;
   void Function(String input)? onStdin;
 
   /// The value [stdinWrite] reports. Negative values simulate a native write
@@ -35,7 +36,10 @@ class MockStockfishBindings implements StockfishBindings {
   int init() => initReturnValue;
 
   @override
-  int main() => mainReturnValue;
+  int start(
+    Pointer<NativeFunction<EngineExitCallback>> onExit,
+    Pointer<NativeFunction<EngineOutputCallback>> onOutput,
+  ) => startReturnValue;
 
   @override
   int stdinWrite(String input) {
@@ -43,9 +47,6 @@ class MockStockfishBindings implements StockfishBindings {
     onStdin?.call(input);
     return stdinWriteReturnValue;
   }
-
-  @override
-  String? stdoutRead() => null;
 
   @override
   int phase() => phaseReturnValue;
@@ -88,7 +89,7 @@ class MockEngine {
   /// Exiting twice is a no-op, as it is for a real process.
   ///
   /// The reader stops too: a real engine writes the quit marker on its way out,
-  /// and the isolate reading its pipe returns as soon as it sees it. The handle
+  /// and the thread reading its pipe returns as soon as it sees it. The handle
   /// waits for both, so a mock that reported only the exit would leave every
   /// teardown sitting on the reader timeout.
   void exit(int code) {
@@ -106,12 +107,12 @@ class MockEngine {
     _mainPort.send(code);
   }
 
-  /// Simulates the reader isolate seeing the quit marker and returning.
+  /// Simulates the reader seeing the quit marker and returning.
   void stopReader() {
     _stdoutPort.send(null);
   }
 
-  /// Simulates the reader isolate dying on an error instead of finishing.
+  /// Simulates the output callback failing on a chunk.
   void failReader(String error) {
     _stdoutPort.send({'error': error, 'stackTrace': '<no stack>'});
     _stdoutPort.send(null);
@@ -204,8 +205,8 @@ class MockEngineController {
     }
   }
 
-  /// The spawn isolates override function for zone injection.
-  Future<bool> spawnIsolates(
+  /// The engine start override function for zone injection.
+  Future<bool> spawnEngine(
     SendPort mainPort,
     SendPort stdoutPort,
     StockfishFlavor flavor,
@@ -221,7 +222,7 @@ class MockEngineController {
   }
 }
 
-/// Runs [body] with mock Stockfish bindings and isolate spawning.
+/// Runs [body] with mock Stockfish bindings and engine starts.
 ///
 /// The [controller] can be used to simulate engine behavior during the test.
 /// Ensures cleanup happens within the zone context.
@@ -250,7 +251,7 @@ Future<T> runWithMockStockfish<T>(
     },
     zoneValues: {
       stockfishBindingsFactoryKey: controller.bindingsFor,
-      stockfishSpawnIsolatesKey: controller.spawnIsolates,
+      stockfishSpawnEngineKey: controller.spawnEngine,
     },
   );
 }
@@ -587,10 +588,7 @@ void main() {
         );
         // Stockfish 19 evaluates with a single net, so there is no second
         // `EvalFileSmall` to set.
-        expect(
-          calls.where((c) => c.contains('EvalFileSmall')),
-          isEmpty,
-        );
+        expect(calls.where((c) => c.contains('EvalFileSmall')), isEmpty);
       });
     });
   });
