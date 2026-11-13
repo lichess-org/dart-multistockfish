@@ -1,5 +1,10 @@
 ## 0.7.0
 
+- **Breaking**: the deprecated `Stockfish.instance` singleton is removed,
+  along with its `start()` and `quit()`. Use `Stockfish.create()` to get an
+  engine and `dispose()` to stop it. `StockfishState.initial`, which only the
+  singleton could reach, is removed too: an engine is `starting` until
+  `create()` completes.
 - Hot reload no longer hangs while an engine is running. The engine and the
   reader of its output now run on native threads instead of two Dart isolates
   blocked in FFI calls, which the Dart VM could not stop for a reload. They

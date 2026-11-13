@@ -56,11 +56,11 @@ makes hot reload hang):
 4. Commands sent via `stockfish_stdin_write()` from any thread
 
 ### Important Constraints
-- `Stockfish` is a singleton - use `Stockfish.instance`
-- Call `start()` to run the engine with configuration (flavor, variant, NNUE paths)
-- `start()` throws `StateError` if engine is already running - call `quit()` first
-- After `quit()`, state returns to `initial` and engine can be restarted
-- The `stdout` stream persists across restarts - listeners don't need to re-subscribe
+- `Stockfish.create(flavor:, variant:, nnuePath:)` starts an engine and completes once it is ready;
+  `dispose()` stops it. A handle is single-use: create another one to restart
+- At most one live engine per flavor: `create()` throws `StateError` while another engine of that
+  flavor holds the slot. Engines of different flavors run side by side
+- Each handle has its own `stdout`, which closes when the engine is disposed or exits
 - For `latestNoNNUE` flavor, the NNUE file must be downloaded and its path provided as `nnuePath`
 
 ### Native Plugin Build

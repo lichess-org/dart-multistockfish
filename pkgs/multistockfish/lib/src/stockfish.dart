@@ -56,7 +56,7 @@ const kReaderStopTimeout = Duration(seconds: 1);
 /// one. An engine that exits releases its flavor's slot without waiting to be
 /// disposed, so a replacement can be created straight away.
 class Stockfish {
-  Stockfish._(this._flavor, {bool legacy = false}) : _legacy = legacy;
+  Stockfish._(this._flavor, this._variant, this._nnuePath);
 
   /// The engines currently holding their flavor's slot.
   static final Map<StockfishFlavor, Stockfish> _live = {};
@@ -115,11 +115,7 @@ class Stockfish {
     // Claiming the slot before the first await is what makes two concurrent
     // create() calls for one flavor resolve to a refusal rather than to two
     // engines racing each other into the same native globals.
-    final engine =
-        Stockfish._(flavor)
-          .._variant = variant
-          .._nnuePath = nnuePath;
-    engine._claimSlot(flavor);
+    final engine = Stockfish._(flavor, variant, nnuePath).._claimSlot();
     if (onStdout != null) engine._stdoutController.stream.listen(onStdout);
 
     try {
@@ -132,11 +128,9 @@ class Stockfish {
     return engine;
   }
 
-  final bool _legacy;
-
-  StockfishFlavor _flavor;
-  String? _variant;
-  String? _nnuePath;
+  final StockfishFlavor _flavor;
+  final String? _variant;
+  final String? _nnuePath;
 
   /// The flavor of Stockfish this engine runs.
   StockfishFlavor get flavor => _flavor;
@@ -155,8 +149,6 @@ class Stockfish {
   /// The engine currently owning the state, or null when none is running.
   _RunningEngine? _engine;
 
-  Future<void>? _pendingStart;
-  Future<void>? _pendingQuit;
   Future<void>? _pendingDispose;
 
   /// Whether [dispose] has been called, recorded before anything it does can
@@ -165,7 +157,8 @@ class Stockfish {
 
   /// The current state of the underlying C++ engine.
   ///
-  /// A handle returned by [create] is [StockfishState.ready]. It ends as
+  /// It is [StockfishState.starting] until [create] completes, so a handle
+  /// returned by [create] is [StockfishState.ready]. It ends as
   /// [StockfishState.disposed] — after [dispose], or after the engine exits
   /// cleanly on its own, as it does when sent `quit` over [stdin] — or as
   /// [StockfishState.error] if it died badly. None of those is recoverable on
@@ -245,17 +238,17 @@ class Stockfish {
     return written;
   }
 
-  /// Takes [flavor]'s slot, or throws if another engine still holds it.
-  void _claimSlot(StockfishFlavor flavor) {
-    if (_live.containsKey(flavor)) {
+  /// Takes this engine's flavor's slot, or throws if another engine still
+  /// holds it.
+  void _claimSlot() {
+    if (_live.containsKey(_flavor)) {
       throw StateError(
-        'A ${flavor.name} engine is already live. Dispose it before creating '
+        'A ${_flavor.name} engine is already live. Dispose it before creating '
         'another one of the same flavor. (Engines of other flavors are '
         'unaffected and can run alongside it.)',
       );
     }
-    _flavor = flavor;
-    _live[flavor] = this;
+    _live[_flavor] = this;
   }
 
   /// Gives this flavor's slot back, if this engine still holds it.
@@ -306,8 +299,6 @@ class Stockfish {
       engine.detach();
       throw Exception('Failed to start the ${_flavor.name} engine');
     }
-
-    _state._setValue(StockfishState.starting);
 
     try {
       // Wait for the engine to be ready by checking the first non-empty line (usually its name).
@@ -391,15 +382,6 @@ class Stockfish {
   /// that its reader has let go of the output pipe before the next engine of
   /// this flavor can drain it.
   Future<void> dispose() {
-    if (_legacy) {
-      // Disposing the singleton would close the stdout stream every caller
-      // shares and leave no way back, so this is refused rather than honoured.
-      throw StateError(
-        'Stockfish.instance cannot be disposed: it is a process-wide singleton '
-        'and callers share its streams. Use quit(), or migrate to an engine of '
-        'your own from Stockfish.create().',
-      );
-    }
     _disposing = true;
     return _pendingDispose ??= _doDispose();
   }
@@ -490,14 +472,6 @@ class Stockfish {
       );
     }
 
-    if (_legacy) {
-      _releaseSlot();
-      _state._setValue(
-        exitCode == 0 ? StockfishState.initial : StockfishState.error,
-      );
-      return;
-    }
-
     // When dispose() asked for the exit, it publishes the final state itself.
     if (_disposing) return;
 
@@ -512,163 +486,6 @@ class Stockfish {
       exitCode == 0 ? StockfishState.disposed : StockfishState.error,
       closeStdout: true,
     );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Deprecated singleton facade.
-  // ---------------------------------------------------------------------------
-
-  /// The singleton instance of Stockfish.
-  @Deprecated(
-    'Use Stockfish.create() and dispose() instead: engines are now per-flavor '
-    'handles, so several flavors can be live at once and each has its own '
-    'state and streams. This singleton will be removed in the next release.',
-  )
-  static final Stockfish instance = Stockfish._(
-    StockfishFlavor.light,
-    legacy: true,
-  );
-
-  /// Starts the C++ engine.
-  ///
-  /// Returns a [Future] that completes when the engine is ready to accept commands.
-  ///
-  /// When [flavor] is [StockfishFlavor.latestNoNNUE], [nnuePath] must be provided.
-  ///
-  /// Throws a [TimeoutException] if the engine does not become ready in time.
-  @Deprecated(
-    'Use Stockfish.create() instead, which returns an engine of its own '
-    'rather than reconfiguring a shared one.',
-  )
-  Future<void> start({
-    /// The flavor of Stockfish to use.
-    StockfishFlavor flavor = StockfishFlavor.light,
-
-    /// The variant of chess to use. (Only for [StockfishFlavor.variant]).
-    ///
-    /// Example: '3check', 'crazyhouse', 'atomic', 'kingofthehill', 'antichess', 'horde', 'racingkings'.
-    String? variant,
-
-    /// Full path to the net file for NNUE evaluation. Only used for [StockfishFlavor.latestNoNNUE].
-    String? nnuePath,
-  }) {
-    assert(
-      _legacy,
-      'start() only exists on the deprecated Stockfish.instance. An engine '
-      'from Stockfish.create() is already started.',
-    );
-    assert(
-      flavor != StockfishFlavor.latestNoNNUE || nnuePath != null,
-      'NNUE evaluation requires nnuePath',
-    );
-
-    if (_pendingStart != null) {
-      return _pendingStart!;
-    }
-
-    if (_state.value != StockfishState.initial &&
-        _state.value != StockfishState.error) {
-      _logger.warning(
-        'Attempt to start Stockfish while it is already running.',
-      );
-      throw StateError(
-        'Stockfish is already running. Call quit() before starting again.',
-      );
-    }
-
-    // The singleton competes for the same per-flavor slots as create(), so a
-    // caller half-migrated to handles cannot end up with two engines of one
-    // flavor by using both APIs.
-    _claimSlot(flavor);
-
-    _variant = variant;
-    _nnuePath = nnuePath;
-
-    return _pendingStart = _legacyStart().whenComplete(
-      () => _pendingStart = null,
-    );
-  }
-
-  Future<void> _legacyStart() async {
-    try {
-      await _doStart();
-    } catch (_) {
-      // The singleton survives a failed start and can be started again, so it
-      // keeps its stdout stream; only the slot and the state are reset.
-      _release(StockfishState.error, closeStdout: false);
-      rethrow;
-    }
-  }
-
-  /// Quits the C++ engine.
-  ///
-  /// Returns a [Future] that completes when the engine has exited.
-  ///
-  /// After quitting, the engine can be started again with [start].
-  ///
-  /// It is safe to call [quit] multiple times; subsequent calls will wait for the first to complete.
-  @Deprecated(
-    'Use dispose() on an engine from Stockfish.create() instead. Unlike quit(), '
-    'it also gives up on an engine that will not exit.',
-  )
-  Future<void> quit() {
-    assert(
-      _legacy,
-      'quit() only exists on the deprecated Stockfish.instance. Use dispose() '
-      'on an engine from Stockfish.create().',
-    );
-
-    if (_pendingQuit != null) {
-      return _pendingQuit!;
-    }
-
-    switch (_state.value) {
-      case StockfishState.initial:
-      case StockfishState.error:
-      case StockfishState.disposed:
-        return Future.value();
-      case StockfishState.starting:
-      case StockfishState.ready:
-        return _pendingQuit = _doQuit().whenComplete(() => _pendingQuit = null);
-    }
-  }
-
-  Future<void> _doQuit() {
-    final completer = Completer<void>();
-    void onStateChange() {
-      switch (_state.value) {
-        case StockfishState.ready:
-          _requestQuit();
-        case StockfishState.initial:
-        case StockfishState.error:
-          _state.removeListener(onStateChange);
-          completer.complete();
-        default:
-          break;
-      }
-    }
-
-    _state.addListener(onStateChange);
-    _requestQuit();
-    return completer.future;
-  }
-
-  /// Asks a ready engine to quit.
-  ///
-  /// If the command cannot be delivered the engine is unreachable, so it will
-  /// never report an exit. Waiting for one would hang [quit] forever, so the
-  /// engine is declared failed instead — which is what it is.
-  void _requestQuit() {
-    if (_state.value != StockfishState.ready) return;
-
-    if (_write('quit') < 0) {
-      _logger.severe(
-        'The engine could not be asked to quit and will never report an exit. '
-        'Giving up on a clean shutdown. $diagnostics',
-      );
-      _releaseSlot();
-      _state._setValue(StockfishState.error);
-    }
   }
 }
 
@@ -923,7 +740,7 @@ Future<bool> _startNative(
 
 class _StockfishState extends ChangeNotifier
     implements ValueListenable<StockfishState> {
-  StockfishState _value = StockfishState.initial;
+  StockfishState _value = StockfishState.starting;
 
   @override
   StockfishState get value => _value;
