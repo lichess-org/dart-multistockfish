@@ -95,9 +95,10 @@ final stockfish = await Stockfish.create(onStdout: console.add);
 
 ### Quit / Hot reload
 
-There are two active isolates per running Stockfish engine. That interferes
-with Flutter's hot reload feature so you need to dispose your engines before
-attempting to reload.
+Each running engine uses two native threads of its own, one for the engine and
+one reading its output, and no Dart isolate, so hot reload works while engines
+are running. A hot restart does not stop them, but the next `create()` of the
+same flavor asks the leftover engine to quit before it starts its own.
 
 `dispose()` sends the UCI `quit` command, waits for the engine to exit and frees
 its flavor's slot. An engine that will not exit is given up on rather than

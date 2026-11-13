@@ -1,30 +1,8 @@
-import 'dart:convert';
 import 'dart:ffi' as ffi;
 import 'package:ffi/ffi.dart';
 import 'package:logging/logging.dart';
 
 final _logger = Logger('Stockfish');
-
-/// Decodes a NUL-terminated chunk of engine output.
-///
-/// Deliberately not `Utf8Pointer.toDartString()`, which is
-/// `utf8.decode(..., allowMalformed: false)` and therefore *throws* on a partial
-/// sequence. A chunk is a slice of a byte stream, so a multi-byte character can
-/// straddle two of them — and that throw would land in the reader isolate's loop,
-/// uncaught, killing the only thing draining the engine's pipe. The engine then
-/// blocks writing into a full pipe, stops reading commands, misses its quit, and
-/// keeps its native slot for the rest of the process's life.
-///
-/// A replacement character on one line of engine output is a far better outcome,
-/// and it makes the reader proof against malformed bytes from an engine that is
-/// already misbehaving, not only against split ones.
-String decodeEngineChunk(ffi.Pointer<ffi.Uint8> bytes) {
-  var length = 0;
-  while (bytes[length] != 0) {
-    length++;
-  }
-  return utf8.decode(bytes.asTypedList(length), allowMalformed: true);
-}
 
 /// Abstract interface for Stockfish native bindings.
 abstract class StockfishBindings {
@@ -33,11 +11,18 @@ abstract class StockfishBindings {
   /// Returns 0 on success, or a negative code described by `describeInitCode`.
   int init();
 
-  /// Runs the Stockfish engine.
+  /// Runs the engine and the reader of its output on native threads, and
+  /// returns at once.
   ///
-  /// Returns the engine's exit code, or a negative code described by
-  /// `describeMainExitCode`.
-  int main();
+  /// The threads post to native ports (`SendPort.nativePort`). [exitPort]
+  /// receives the engine's exit code, described by `describeMainExitCode`, once
+  /// the engine has stopped. [outputPort] receives each chunk of output as a
+  /// `Uint8List` of UTF-8 bytes, which may end part way through a character,
+  /// and then `null`, once and last, when the reader has let go of the pipe.
+  ///
+  /// Returns 0 when both are running, or a negative code described by
+  /// `describeStartCode`, in which case nothing is posted to [exitPort].
+  int start({required int exitPort, required int outputPort});
 
   /// Writes to the Stockfish engine's stdin.
   ///
@@ -45,9 +30,6 @@ abstract class StockfishBindings {
   /// `describeWriteCode`. This call never blocks indefinitely: if the engine
   /// has stopped reading, it gives up and reports the failure instead.
   int stdinWrite(String input);
-
-  /// Reads from the Stockfish engine's stdout.
-  String? stdoutRead();
 
   /// The engine's current lifecycle phase, as a `SF_PHASE_*` code.
   ///
@@ -71,7 +53,7 @@ abstract class StockfishBindings {
 ///
 /// Every native package built by this plugin (`multistockfish_chess`,
 /// `multistockfish_light`, `multistockfish_variant`) exports its own copy of the
-/// same four `stockfish_*` C functions. On platforms where several of these
+/// same set of `stockfish_*` C functions. On platforms where several of these
 /// native libraries can end up resolving symbols from the same process-wide
 /// namespace (notably iOS, where a Swift Package Manager-built plugin is
 /// statically linked into the app binary instead of loaded from its own
@@ -101,8 +83,8 @@ class StockfishBindingsFFI implements StockfishBindings {
   }
 
   @override
-  int main() {
-    return _main();
+  int start({required int exitPort, required int outputPort}) {
+    return _start(ffi.NativeApi.postCObject.cast(), exitPort, outputPort);
   }
 
   @override
@@ -111,18 +93,6 @@ class StockfishBindingsFFI implements StockfishBindings {
     final result = _stdinWrite(inputPtr);
     calloc.free(inputPtr);
     return result;
-  }
-
-  @override
-  String? stdoutRead() {
-    final pointer = _stdoutRead();
-
-    if (pointer.address == 0) {
-      _logger.fine('nativeStdoutRead returns NULL');
-      return null;
-    }
-
-    return decodeEngineChunk(pointer.cast<ffi.Uint8>());
   }
 
   @override
@@ -164,8 +134,8 @@ class StockfishBindingsFFI implements StockfishBindings {
   ///
   /// The diagnostic symbols were added after the first release of the native
   /// packages. An app pinned to an older one should lose the diagnostics, not
-  /// crash on the first lookup, so these are resolved leniently while the four
-  /// core symbols stay strict.
+  /// crash on the first lookup, so these are resolved leniently while the core
+  /// symbols stay strict.
   ffi.Pointer<T>? _tryLookup<T extends ffi.NativeType>(String symbolName) {
     try {
       return _lookup<T>(symbolName);
@@ -183,10 +153,14 @@ class StockfishBindingsFFI implements StockfishBindings {
   );
   late final _init = _initPtr.asFunction<int Function()>();
 
-  late final _mainPtr = _lookup<ffi.NativeFunction<ffi.Int32 Function()>>(
-    '${_prefix}main',
-  );
-  late final _main = _mainPtr.asFunction<int Function()>();
+  late final _start =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<ffi.Void>, ffi.Int64, ffi.Int64)
+        >
+      >(
+        '${_prefix}start',
+      ).asFunction<int Function(ffi.Pointer<ffi.Void>, int, int)>();
 
   late final _stdinWritePtr =
       _lookup<ffi.NativeFunction<ffi.IntPtr Function(ffi.Pointer<Utf8>)>>(
@@ -194,13 +168,6 @@ class StockfishBindingsFFI implements StockfishBindings {
       );
   late final _stdinWrite =
       _stdinWritePtr.asFunction<int Function(ffi.Pointer<Utf8>)>();
-
-  late final _stdoutReadPtr =
-      _lookup<ffi.NativeFunction<ffi.Pointer<Utf8> Function()>>(
-        '${_prefix}stdout_read',
-      );
-  late final _stdoutRead =
-      _stdoutReadPtr.asFunction<ffi.Pointer<Utf8> Function()>();
 
   late final _phase =
       _tryLookup<ffi.NativeFunction<ffi.Int32 Function()>>(

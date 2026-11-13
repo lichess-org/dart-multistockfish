@@ -36,23 +36,31 @@ This is a Dart workspace monorepo with the following structure:
 - **pkgs/multistockfish_variant**: Native C++ library for Fairy-Stockfish (variants)
 
 ### Key Files in pkgs/multistockfish/lib/
-- `src/stockfish.dart`: Main `Stockfish` class - singleton, manages isolates for engine communication
+- `src/stockfish.dart`: Main `Stockfish` class - per-flavor engine handles, starts the native engine threads
 - `src/bindings.dart`: FFI bindings to native C++ libraries
 - `src/stockfish_flavor.dart`: Enum defining engine variants
 - `src/stockfish_state.dart`: Engine lifecycle states (initial, starting, ready, error)
 
 ### Engine Communication Pattern
-The engine runs in separate isolates:
-1. Main isolate calls native `stockfish_init()` and `stockfish_main()`
-2. Stdout isolate continuously polls `stockfish_stdout_read()`
-3. Commands sent via `stockfish_stdin_write()` from any thread
+The engine runs on native threads, never on a Dart isolate (an isolate blocked in an FFI call
+makes hot reload hang):
+1. The calling isolate calls native `stockfish_init()`, then `stockfish_start(post, exit_port,
+   output_port)` with `NativeApi.postCObject` and the native ports of two `ReceivePort`s; it
+   returns at once
+2. `start` (in `sfthreads.h`, shared by every flavour) runs `stockfish_main()` on one thread and
+   loops on `stockfish_stdout_read()` on another, posting the exit code and the output chunks
+   (UTF-8 bytes, decoded by `EngineOutputDecoder`) to the ports. Posting to a closed or dead
+   port is a no-op, which is why these are ports and not `NativeCallable`s
+3. If `init` reports an engine still running (e.g. after a hot restart), `create()` sends it `quit`
+   and retries `init` until it has gone
+4. Commands sent via `stockfish_stdin_write()` from any thread
 
 ### Important Constraints
-- `Stockfish` is a singleton - use `Stockfish.instance`
-- Call `start()` to run the engine with configuration (flavor, variant, NNUE paths)
-- `start()` throws `StateError` if engine is already running - call `quit()` first
-- After `quit()`, state returns to `initial` and engine can be restarted
-- The `stdout` stream persists across restarts - listeners don't need to re-subscribe
+- `Stockfish.create(flavor:, variant:, nnuePath:)` starts an engine and completes once it is ready;
+  `dispose()` stops it. A handle is single-use: create another one to restart
+- At most one live engine per flavor: `create()` throws `StateError` while another engine of that
+  flavor holds the slot. Engines of different flavors run side by side
+- Each handle has its own `stdout`, which closes when the engine is disposed or exits
 - For `latestNoNNUE` flavor, the NNUE file must be downloaded and its path provided as `nnuePath`
 
 ### Native Plugin Build

@@ -1,12 +1,9 @@
 /// C++ engine state.
 enum StockfishState {
-  /// Engine is not running.
-  ///
-  /// Only reachable through the deprecated `Stockfish.instance`, which can be
-  /// started again. An engine from `Stockfish.create` is already running.
-  initial,
-
   /// Engine is starting.
+  ///
+  /// Only seen before `Stockfish.create` completes, for instance from its
+  /// `onStdout` callback.
   starting,
 
   /// Engine is running, ready to receive commands.

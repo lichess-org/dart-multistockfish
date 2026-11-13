@@ -1,3 +1,27 @@
+## 0.7.0
+
+- **Breaking**: the deprecated `Stockfish.instance` singleton is removed,
+  along with its `start()` and `quit()`. Use `Stockfish.create()` to get an
+  engine and `dispose()` to stop it. `StockfishState.initial`, which only the
+  singleton could reach, is removed too: an engine is `starting` until
+  `create()` completes.
+- Hot reload no longer hangs while an engine is running. The engine and the
+  reader of its output now run on native threads instead of two Dart isolates
+  blocked in FFI calls, which the Dart VM could not stop for a reload. They
+  report by posting to the engine's ports, so an engine that outlives its
+  isolate (after a hot restart) posts to a dead port, which is a no-op.
+- After a hot restart, creating an engine no longer fails because the previous
+  isolate's engine of that flavor is still running: it is sent `quit`, and the
+  new engine starts once it has gone (or the create fails after
+  `kQuitTimeout`). An engine abandoned because it would not quit gets the same
+  second chance.
+- Requires `multistockfish_chess` 0.7.0, `multistockfish_light` 0.2.0 and
+  `multistockfish_variant` 0.5.0, which add the native `start` entry point.
+- **Breaking** (testing API): `stockfishSpawnIsolatesKey` is renamed
+  `stockfishSpawnEngineKey`, and `StockfishBindings.main()`/`stdoutRead()` are
+  replaced by `start()`. `decodeEngineChunk` is replaced by
+  `EngineOutputDecoder`.
+
 ## 0.6.1
 
 - Update package's description.
