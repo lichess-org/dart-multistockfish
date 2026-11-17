@@ -65,3 +65,9 @@ makes hot reload hang):
 
 ### Native Plugin Build
 Each native package uses CMakeLists.txt (Android) and podspec (iOS) to build the Stockfish C++ source. The ios/ directories contain the full Stockfish source code.
+
+The native files shared by every flavour (`sfthreads.h`, `sfio.h`, `sfio.cpp`) live once in `native/`
+at the repo root, and each package's `Sources/<pkg>/` holds relative symlinks to them. Edit the
+files in `native/`. `dart pub publish` follows the links, so published packages contain real files.
+`sfio_config.h`, which picks each flavour's namespace, stays per package. `pkgs/` holds Dart packages
+only.
