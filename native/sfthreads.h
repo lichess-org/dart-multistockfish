@@ -14,8 +14,8 @@
 // post returns false and nothing happens. A callback into a dead isolate would
 // have no such guarantee, which is why these are ports and not callbacks.
 //
-// Header only and identical in every flavour, like sfio: each shim includes it
-// and wires it to its own entry points.
+// Header only and identical in every flavour, like sfio: sfshim.h includes it
+// and wires it to the flavour's own entry points.
 
 #pragma once
 
