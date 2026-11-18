@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstring>
+#include <mutex>
 #include <streambuf>
 
 #include <fcntl.h>
@@ -19,48 +20,71 @@ namespace {
 // engine's own end of the shim's pipe, and is blocking -- exactly what fd 1 was
 // after the dup2 this replaces.
 //
-// Not internally synchronised, which is safe for the same reason std::cout was:
-// every site that writes more than a single token does so between IO_LOCK and
-// IO_UNLOCK, and sync_cout is the only way output is produced from a search
-// thread.
+// Internally synchronised: the input stream is tied to this one, so the UCI
+// thread flushes it before every read without holding IO_LOCK, while a search
+// thread may be writing a line. There is no put area, so every character goes
+// through xsputn() or overflow() and takes the lock.
 class FdOutBuf final: public std::streambuf {
 
  public:
-  FdOutBuf() { setp(buf, buf + sizeof(buf)); }
+  FdOutBuf() { setp(nullptr, nullptr); }
 
-  void set_fd(int descriptor) { fd = descriptor; }
+  void set_fd(int descriptor) {
+    std::lock_guard<std::mutex> lock(mutex);
+    fd = descriptor;
+  }
 
   // Throws away whatever has not been written yet.
-  void discard() { setp(buf, buf + sizeof(buf)); }
+  void discard() {
+    std::lock_guard<std::mutex> lock(mutex);
+    used = 0;
+  }
 
  protected:
   int_type overflow(int_type c) override {
 
-    if (write_out() < 0)
-        return traits_type::eof();
+    if (traits_type::eq_int_type(c, traits_type::eof()))
+        return traits_type::not_eof(c);
 
-    if (!traits_type::eq_int_type(c, traits_type::eof()))
+    const char ch = traits_type::to_char_type(c);
+    return xsputn(&ch, 1) == 1 ? c : traits_type::eof();
+  }
+
+  std::streamsize xsputn(const char* s, std::streamsize n) override {
+
+    std::lock_guard<std::mutex> lock(mutex);
+    std::streamsize done = 0;
+
+    while (done < n)
     {
-        *pptr() = traits_type::to_char_type(c);
-        pbump(1);
+        if (used == sizeof(buf) && write_out() < 0)
+            return done;
+
+        const size_t chunk = std::min(sizeof(buf) - used, size_t(n - done));
+        std::memcpy(buf + used, s + done, chunk);
+        used += chunk;
+        done += std::streamsize(chunk);
     }
 
-    return traits_type::not_eof(c);
+    return done;
   }
 
   // std::endl, and therefore sync_endl, ends up here: this is what puts a
   // finished line into the pipe.
-  int sync() override { return write_out(); }
+  int sync() override {
+    std::lock_guard<std::mutex> lock(mutex);
+    return write_out();
+  }
 
  private:
-  // Empties the put area onto the descriptor. Returns -1 if a write cannot be
+  // Empties the buffer onto the descriptor. Returns -1 if a write cannot be
   // completed, which raises badbit on the stream -- the same outcome a failed
-  // write to std::cout had. The put area is reset either way, so a broken pipe
+  // write to std::cout had. The buffer is reset either way, so a broken pipe
   // cannot leave the engine wedged against a permanently full buffer.
   int write_out() {
 
-    const char*       p   = pbase();
-    const char* const end = pptr();
+    const char*       p   = buf;
+    const char* const end = buf + used;
     int               result = 0;
 
     while (p < end)
@@ -80,12 +104,14 @@ class FdOutBuf final: public std::streambuf {
         break;
     }
 
-    setp(buf, buf + sizeof(buf));
+    used = 0;
     return result;
   }
 
-  char buf[4096];
-  int  fd = STDOUT_FILENO;
+  std::mutex mutex;
+  char       buf[4096];
+  size_t     used = 0;
+  int        fd   = STDOUT_FILENO;
 };
 
 
