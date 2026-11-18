@@ -155,7 +155,9 @@ version makes any of them reachable, they need patching.
 be started from Dart instead of from a command line. It is not covered by the
 patch above, but it *does* break when upstream changes that file — which is
 exactly what the 18 → 19 bump did. Diff the vendored `src/main.cpp` against the
-previous version and mirror any change into the shim's `main()`.
+previous version and mirror any change into the shim's `engine_main()`. (The rest
+of the shim -- pipes, diagnostics, FFI entry points -- is shared by every flavour
+in the repo's `native/sfshim.h` and does not depend on the engine version.)
 
 The two changes 19 brought, both compile errors rather than silent ones:
 

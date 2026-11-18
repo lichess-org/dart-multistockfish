@@ -1,9 +1,10 @@
 // Host integration test for the multistockfish native shim (variant flavour).
 //
 // Exercises the P1 hardening -- the re-entry guard, pipe reuse across a restart,
-// no descriptor leak, and the non-blocking stdin write -- and the P2 guarantee
-// that the engine talks to its own pipe rather than to the process's standard
-// descriptors.
+// no descriptor leak, and the non-blocking stdin write -- the P2 guarantee that
+// the engine talks to its own pipe rather than to the process's standard
+// descriptors, and start(), which runs the engine and its reader on threads of
+// the library's own and reports through Dart_PostCObject.
 //
 // Diagnostics go to stderr, which leaves this process's stdout free to be checked
 // for exactly the interference the engine no longer causes.
@@ -11,6 +12,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -19,11 +21,14 @@
 #include <thread>
 #include <unistd.h>
 
+#include "../ios/multistockfish_variant/Sources/multistockfish_variant/sfthreads.h"
+
 extern "C" {
 int stockfish_variant_init();
 int stockfish_variant_main();
 ssize_t stockfish_variant_stdin_write(char *data);
 char *stockfish_variant_stdout_read();
+int stockfish_variant_start(bool (*post)(int64_t, void *), int64_t exit_port, int64_t output_port);
 int stockfish_variant_phase();
 const char *stockfish_variant_phase_step();
 long long stockfish_variant_phase_elapsed_ms();
@@ -124,6 +129,124 @@ static int open_fd_count()
   return count;
 }
 
+// ---------------------------------------------------------------------------
+// start(): the library's own threads, reporting through callbacks.
+
+static int g_start_exit_code = -99;
+static bool g_start_exited = false;
+static bool g_start_reader_done = false;
+
+static const int64_t kExitPort = 101;
+static const int64_t kOutputPort = 102;
+
+// Stands in for Dart_PostCObject: decodes what the library posts the way the VM
+// would, and like the VM copies the bytes before returning.
+static bool fake_post(int64_t port, void *raw)
+{
+  const sfthreads::DartCObject *message = static_cast<sfthreads::DartCObject *>(raw);
+  {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (port == kExitPort && message->type == sfthreads::kDartCObjectInt64)
+    {
+      g_start_exit_code = (int)message->value.as_int64;
+      g_start_exited = true;
+    }
+    else if (port == kOutputPort && message->type == sfthreads::kDartCObjectNull)
+      g_start_reader_done = true;
+    else if (port == kOutputPort && message->type == sfthreads::kDartCObjectTypedData &&
+             message->value.as_typed_data.type == sfthreads::kDartTypedDataUint8)
+      g_output.append(reinterpret_cast<const char *>(message->value.as_typed_data.values),
+                      (size_t)message->value.as_typed_data.length);
+    else
+    {
+      fprintf(stderr, "  FAIL unexpected message type %d on port %lld\n", message->type,
+              (long long)port);
+      g_failures++;
+    }
+  }
+  g_cv.notify_all();
+  return true;
+}
+
+static void reset_start_state()
+{
+  reset_output();
+  std::lock_guard<std::mutex> lock(g_mutex);
+  g_start_exit_code = -99;
+  g_start_exited = false;
+  g_start_reader_done = false;
+}
+
+static bool wait_for_start_end(int timeout_ms = 15000)
+{
+  std::unique_lock<std::mutex> lock(g_mutex);
+  return g_cv.wait_for(lock, std::chrono::milliseconds(timeout_ms),
+                       [] { return g_start_exited && g_start_reader_done; });
+}
+
+static void run_started_session()
+{
+  fprintf(stderr, "\n-- start() --\n");
+  reset_start_state();
+
+  check(stockfish_variant_init() == 0, "init succeeds before start");
+  check(stockfish_variant_start(nullptr, kExitPort, kOutputPort) == -1,
+        "start refuses a missing Dart_PostCObject");
+  check(stockfish_variant_start(fake_post, kExitPort, kOutputPort) == 0, "start returns at once");
+
+  check(wait_for_output("Fairy-Stockfish"), "engine announces itself through its port");
+  check(stockfish_variant_start(fake_post, kExitPort, kOutputPort) == -2,
+        "a second start is refused while the engine runs");
+
+  check(send("uci\n") > 0, "uci accepted");
+  check(wait_for_output("uciok"), "engine answers uciok through its port");
+
+  check(send("quit\n") > 0, "quit accepted");
+  check(wait_for_start_end(), "both the exit and the reader's end are posted");
+  check(g_start_exit_code == 0, "engine exits with 0");
+  check(stockfish_variant_phase() == SF_PHASE_EXITED, "phase is exited");
+  {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    check(g_output.find("quitok") == std::string::npos, "the quit marker is not delivered");
+  }
+}
+
+// What the Dart side does after a hot restart: the engine started by the previous
+// isolate is still running, nobody is listening to it, and the new isolate has to
+// get it to quit before it can start one of its own.
+static void run_orphan_recovery()
+{
+  fprintf(stderr, "\n-- recovering an orphaned engine --\n");
+  reset_start_state();
+
+  check(stockfish_variant_init() == 0, "init succeeds");
+  check(stockfish_variant_start(fake_post, kExitPort, kOutputPort) == 0, "the first engine starts");
+  check(wait_for_output("Fairy-Stockfish"), "and announces itself");
+
+  // The new isolate knows nothing of it and asks for an engine of its own.
+  check(stockfish_variant_init() == -2, "init is refused while the orphan runs");
+
+  check(send("quit\n") > 0, "the orphan is sent quit through the shared pipe");
+
+  int result = -99;
+  for (int waited = 0; waited < 5000; waited += 10)
+  {
+    result = stockfish_variant_init();
+    if (result != -2 && result != -4)
+      break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  check(result == 0, "init succeeds once the orphan and its reader are gone");
+  check(wait_for_start_end(), "the orphan's exit and reader end were posted");
+
+  reset_start_state();
+  check(stockfish_variant_start(fake_post, kExitPort, kOutputPort) == 0, "a new engine starts");
+  check(wait_for_output("Fairy-Stockfish"), "the new engine announces itself");
+  check(send("quit\n") > 0, "quit accepted");
+  check(wait_for_start_end(), "the new engine exits");
+  check(g_start_exit_code == 0, "with 0");
+}
+
 // One full lifecycle: init, boot, uci handshake, quit, and a clean exit.
 static void run_engine_session(const char *label, int *exit_code)
 {
@@ -197,6 +320,10 @@ int main()
   run_engine_session("restart", &exit_code);
 
   const int fds_after_second = open_fd_count();
+
+  // --- session 3: the library's own threads -------------------------------
+  run_started_session();
+  run_orphan_recovery();
   fprintf(stderr, "\n-- descriptors --\n");
   fprintf(stderr, "  ..  start=%d after 1st=%d after 2nd=%d\n", fds_at_start,
           fds_after_first, fds_after_second);

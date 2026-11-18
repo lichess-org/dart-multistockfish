@@ -124,7 +124,18 @@ String describeInitCode(int code) => switch (code) {
   -2 =>
     'refused: the previous engine never exited, so this process cannot host another one',
   -3 => 'fcntl() failed making the input pipe non-blocking',
+  -4 =>
+    'refused: the previous engine exited but its reader has not let go of the pipe yet',
   _ => 'unknown init error ($code)',
+};
+
+/// Describes a value returned by the native `start` function.
+String describeStartCode(int code) => switch (code) {
+  0 => 'ok',
+  -1 => 'Dart_PostCObject or a port was missing',
+  -2 => 'refused: an engine or its reader is already running',
+  -3 => 'a thread could not be created',
+  _ => 'unknown start error ($code)',
 };
 
 /// Describes a value returned by the native `main` function.
