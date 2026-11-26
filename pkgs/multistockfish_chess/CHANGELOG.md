@@ -1,3 +1,9 @@
+## 0.7.1
+
+- Fix a data race on the engine output buffer that could duplicate or splice lines of UCI
+  output, a `bestmove` among them, when a search was stopped and the engine read its next
+  command at the same moment.
+
 ## 0.7.0
 
 - Add `stockfish_start()`, which runs the engine and the reader of its output on threads

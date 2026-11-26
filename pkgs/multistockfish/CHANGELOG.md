@@ -1,3 +1,11 @@
+## 0.7.1
+
+- Fix a data race on the engine output buffer that could duplicate or splice lines of UCI
+  output, a `bestmove` among them, when a search was stopped and the engine read its next
+  command at the same moment.
+  A duplicated `bestmove` could make an app consuming the output answer the wrong search.
+  Requires multistockfish_light 0.2.1, multistockfish_chess 0.7.1 and multistockfish_variant 0.5.1.
+
 ## 0.7.0
 
 - **Breaking**: the deprecated `Stockfish.instance` singleton is removed,
